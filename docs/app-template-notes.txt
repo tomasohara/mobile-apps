@@ -1,0 +1,69 @@
+High-Level Overview
+
+  This is a PySide6 (Qt for Python) Android app template built with Buildozer + python-for-android
+  (p4a). It packages a Qt Widgets app into an Android APK. The core structure is:
+
+   buildozer_template/
+   ├── main.py                          # App entry point
+   ├── buildozer.spec                   # Buildozer build configuration
+   ├── mezcla-1.4.0.8-py3-none-any.whl # Mezcla library wheel (includes poe_client)
+   └── deployment/
+       ├── jar/PySide6/jar/             # 11 Qt Android JAR files
+       ├── recipes/                     # 9 p4a build recipes
+       └── wheels/                      # 6 pre-built Python wheels
+
+Detailed Breakdown
+
+  main.py
+
+  A PySide6 QtWidgets app that fetches a "random historical tidbit" via mezcla.poe_client
+  (OpenAI-compatible API wrapper). Uses QLabel + QPushButton in a QVBoxLayout. Note: contains a
+  hardcoded API key on line 19 with a TODO1 to move it to a vault.
+
+  buildozer.spec
+
+  Key non-default settings:
+
+   - requirements — python3, shiboken6, pyside6, six, typing_extensions, requests, 
+  charset_normalizer, certifi, idna, urllib3, mezcla
+   - p4a.bootstrap = qt — Uses the Qt bootstrap (not SDL2/Kivy)
+   - p4a.branch = develop — Tracks p4a develop branch
+   - p4a.commit = 3762c88... — Pinned to stay on Python
+    3.11 (matching PySide6 cp311 wheels)
+   - p4a.local_recipes → deployment/recipes/
+   - p4a.extra_args — --qt-libs=Core,Gui,Widgets --load-local-libs=plugins_platforms_qtforandroid
+   - android.add_jars — Qt6Android.jar + Qt6AndroidBindings.jar (needed for Java compilation)
+   - android.archs = arm64-v8a only (PySide6 pre-built wheels constraint)
+   - android.permissions — INTERNET (for the POE API calls)
+
+  mezcla-1.4.0.8-py3-none-any.whl
+
+  Custom wheel for the mezcla library. Contains poe_client.py (the OpenAI-compatible API client used
+  by main.py). Referenced by the mezcla recipe which unzips it into target site-packages at build
+  time.
+
+  deployment/jar/ (11 JAR files)
+
+  Qt6 Android binding JARs. Only Qt6Android.jar and Qt6AndroidBindings.jar are referenced in the
+  spec, but the others (Bluetooth, Multimedia, Network, Nfc, Quick, Positioning, TextToSpeech,
+  WebView) are included for future use.
+
+  deployment/recipes/ (9 recipes)
+
+  Each is a p4a PythonRecipe subclass that unzips the corresponding wheel into the target's
+  site-packages:
+
+   - PySide6, shiboken6 — Qt for Python + its binding generator runtime
+   - mezcla — points to the top-level .whl file (via parents[3] relative path)
+   - requests, certifi, charset_normalizer, idna, urllib3, typing_extensions — HTTP stack 
+  dependencies
+
+  deployment/wheels/ (6 wheels)
+
+  Pre-built pure-Python wheels for the HTTP dependency chain: requests, urllib3, certifi, 
+  charset_normalizer, idna, typing_extensions. PySide6/shiboken6 wheels are not here (they come from
+  p4a's own download mechanism).
+
+Note:
+  Derived via Claude [27 Feb 26]
+
