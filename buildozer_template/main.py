@@ -3,7 +3,7 @@
 # based on https://www.qt.io/blog/2018/05/04/hello-qt-for-python
 #
 
-"""Simple Hello Worlds style app for use with buildozer"""
+"""Simple Hello World style app for use with buildozer"""
 
 import datetime
 import sys
@@ -16,10 +16,10 @@ def main():
 
     # Create main window widget
     window = QWidget()
-    window.setWindowTitle("Random Tidbit")
+    window.setWindowTitle("Buildozer Template")
 
     # Create widgets
-    label = QLabel("buildozer template")
+    label = QLabel("buildozer template label")
     label.setWordWrap(True)
     button = QPushButton("Quit")
 
