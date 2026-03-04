@@ -23,14 +23,14 @@ source.include_exts = py,png,jpg,kv,atlas
 #source.exclude_exts = spec
 
 # (list) List of directory to exclude (let empty to not exclude anything)
-#source.exclude_dirs = tests, bin, venv
+source.exclude_dirs = tests, bin, venv, backup, old, deployment, log-files, __pycache__, .buildozer, .ruff_cache
 
 # (list) List of exclusions using pattern matching
 # Do not prefix with './'
-#source.exclude_patterns = license,images/*/*.jpg
+source.exclude_patterns = license,images/*/*.jpg,_*,*.log,*.list,*.whl,*.spec.*,poe_client.py
 
 # (str) Application versioning (method 1)
-version = 0.1
+version = 0.2
 
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]
@@ -39,8 +39,8 @@ version = 0.1
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
 ## OLD: requirements = python3,kivy
-## NOTE: shiboken6 is a required dependency for PySide6
-requirements = python3,shiboken6,pyside6,six,typing_extensions,requests,charset_normalizer,certifi,idna,urllib3,mezcla
+## NOTE: mezcla removed—POE client inlined in main.py to reduce APK size
+requirements = python3,shiboken6,pyside6,requests,charset_normalizer,certifi,idna,urllib3
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
@@ -108,7 +108,7 @@ android.permissions = android.permission.INTERNET
 android.api = 34
 
 # (int) Minimum API your APK / AAB will support.
-#android.minapi = 21
+android.minapi = 24
 
 # (int) Android SDK version to use
 #android.sdk = 20
@@ -117,7 +117,7 @@ android.api = 34
 #android.ndk = 23b
 
 # (int) Android NDK API to use. This is the minimum API your app will support, it should usually match android.minapi.
-#android.ndk_api = 21
+android.ndk_api = 24
 
 # (bool) Use --private data storage (True) or --dir public storage (False)
 #android.private_storage = True
@@ -134,7 +134,7 @@ android.api = 34
 # (bool) If True, then skip trying to update the Android sdk
 # This can be useful to avoid excess Internet downloads or save time
 # when an update is due and you just want to test/build your package
-## OLD: android.skip_update = True
+android.skip_update = False
 
 # (bool) If True, then automatically accept SDK license
 # agreements. This is intended for automation only. If set to False,

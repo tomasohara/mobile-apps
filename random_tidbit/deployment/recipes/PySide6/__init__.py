@@ -10,6 +10,23 @@ from pythonforandroid.logger import info
 from pythonforandroid.recipe import PythonRecipe
 
 
+# Only the Qt modules the app actually uses (Core, Gui, Widgets).
+# Adding a module here will include both its native .so and PySide6 binding.
+NEEDED_QT_MODULES = ["QtCore", "QtGui", "QtWidgets"]
+
+# Prefixes to extract into site-packages (everything else is skipped).
+# The .abi3.so Python extensions must be in site-packages for Python import.
+# This keeps libpybundle.so small by excluding .pyi stubs,
+# Qt/lib native libs, QML files, translations, jars, etc.
+_SITE_PREFIXES = [
+    "PySide6/__init__.py",
+    "PySide6/_config.py",
+    "PySide6/_git_pyside_version.py",
+    "PySide6/libpyside6.abi3.so",
+    "PySide6-",  # dist-info
+] + [f"PySide6/{m}.abi3.so" for m in NEEDED_QT_MODULES]
+
+
 class PySideRecipe(PythonRecipe):
     version = '6.10.1'
     wheel_path = '/home/tomohara/Downloads/PySide6-6.10.1-6.10.1-cp311-cp311-android_aarch64.whl'
@@ -18,37 +35,53 @@ class PySideRecipe(PythonRecipe):
     install_in_hostpython = False
 
     def build_arch(self, arch):
-        """Unzip the wheel and copy into site-packages of target"""
+        """Selectively extract only needed files from the PySide6 wheel."""
+        libs_dir = Path(self.ctx.get_libs_dir(arch.arch))
+        site_dir = Path(self.ctx.get_python_install_dir(arch.arch))
 
-        info("Copying libc++_shared.so from SDK to be loaded on startup")
-        libcpp_path = f"{self.ctx.ndk.sysroot_lib_dir}/{arch.command_prefix}/libc++_shared.so"
-        shutil.copyfile(libcpp_path, Path(self.ctx.get_libs_dir(arch.arch)) / "libc++_shared.so")
+        info("Copying libc++_shared.so from NDK")
+        libcpp = f"{self.ctx.ndk.sysroot_lib_dir}/{arch.command_prefix}/libc++_shared.so"
+        shutil.copyfile(libcpp, libs_dir / "libc++_shared.so")
 
-        info(f"Installing {self.name} into site-packages")
-        with zipfile.ZipFile(self.wheel_path, "r") as zip_ref:
-            info("Unzip wheels and copy into {}".format(self.ctx.get_python_install_dir(arch.arch)))
-            zip_ref.extractall(self.ctx.get_python_install_dir(arch.arch))
+        with zipfile.ZipFile(self.wheel_path, "r") as zf:
+            # 1) Extract only minimal Python files into site-packages
+            info(f"Selectively installing {self.name} Python files into {site_dir}")
+            for member in zf.infolist():
+                if any(member.filename.startswith(p) for p in _SITE_PREFIXES):
+                    zf.extract(member, site_dir)
 
-        lib_dir = Path(f"{self.ctx.get_python_install_dir(arch.arch)}/PySide6/Qt/lib")
+            # 2) Copy only needed Qt native .so files into libs/
+            info("Copying needed Qt native libraries")
+            qt_lib_prefix = f"PySide6/Qt/lib/"
+            needed_native = {f"libQt6{m[2:]}_{arch.arch}.so" for m in NEEDED_QT_MODULES}
+            for member in zf.infolist():
+                if not member.filename.startswith(qt_lib_prefix):
+                    continue
+                basename = member.filename.rsplit("/", 1)[-1]
+                if basename in needed_native:
+                    info(f"  -> {basename}")
+                    (libs_dir / basename).write_bytes(zf.read(member.filename))
 
-        info("Copying Qt libraries to be loaded on startup")
-        shutil.copytree(lib_dir, self.ctx.get_libs_dir(arch.arch), dirs_exist_ok=True)
-        shutil.copyfile(lib_dir.parent.parent / "libpyside6.abi3.so",
-                        Path(self.ctx.get_libs_dir(arch.arch)) / "libpyside6.abi3.so")
+            # 3) Copy libpyside6.abi3.so and binding .abi3.so to libs/
+            #    QtLoader needs these in the native libs dir before Python starts
+            pyside_so = "PySide6/libpyside6.abi3.so"
+            (libs_dir / "libpyside6.abi3.so").write_bytes(zf.read(pyside_so))
+            info("Copied libpyside6.abi3.so to libs/")
 
-        # Copy PySide6 module .so files needed by the app
-        for module in ["QtCore", "QtGui", "QtWidgets"]:
-            so_name = f"{module}.abi3.so"
-            shutil.copyfile(lib_dir.parent.parent / so_name,
-                            Path(self.ctx.get_libs_dir(arch.arch)) / so_name)
+            for mod in NEEDED_QT_MODULES:
+                so_name = f"{mod}.abi3.so"
+                wheel_path = f"PySide6/{so_name}"
+                (libs_dir / so_name).write_bytes(zf.read(wheel_path))
+                info(f"  -> {so_name}")
 
-        # Copy the Android platform plugin
-        plugin_path = (lib_dir.parent / "plugins" / "platforms" /
-                      f"libplugins_platforms_qtforandroid_{arch.arch}.so")
-        if plugin_path.exists():
-            shutil.copyfile(plugin_path,
-                            (Path(self.ctx.get_libs_dir(arch.arch)) /
-                             f"libplugins_platforms_qtforandroid_{arch.arch}.so"))
+            # 4) Copy the Android platform plugin
+            plugin_name = f"libplugins_platforms_qtforandroid_{arch.arch}.so"
+            plugin_path = f"PySide6/Qt/plugins/platforms/{plugin_name}"
+            try:
+                (libs_dir / plugin_name).write_bytes(zf.read(plugin_path))
+                info(f"  -> {plugin_name}")
+            except KeyError:
+                info(f"Warning: platform plugin {plugin_path} not found in wheel")
 
 
 recipe = PySideRecipe()
