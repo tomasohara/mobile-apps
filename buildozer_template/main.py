@@ -16,6 +16,7 @@ from mezcla import debug, system
 
 def main():
     """Entry point"""
+    debug.trace(4, "main()")
     app = QApplication(sys.argv)
 
     # Create main window widget
@@ -24,6 +25,14 @@ def main():
 
     # Create widgets
     label = QLabel("buildozer template label")
+    if __debug__:
+        ## TODO4: debug.traceback.print_stack(file=sys.stderr)
+        ## TODO?: debug.raise_exception(4)
+        try:
+            raise RuntimeError()
+        except:
+            debug.traceback.print_stack(file=sys.stderr)
+            label = QLabel(str(sys.exc_info()))
     label.setWordWrap(True)
     button = QPushButton("Quit")
 
@@ -33,8 +42,11 @@ def main():
     # Layout
     layout = QVBoxLayout()
     layout.addWidget(label)
+    if debug.debugging():
+        layout.addWidget(QLabel(__name__))
     layout.addWidget(button)
     window.setLayout(layout)
+    debug.trace_expr(5, app, window, label, button, layout)
 
     # Start app and then exit when done
     window.show()
