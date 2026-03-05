@@ -5,6 +5,8 @@
 # note: via Gemini 3 Pro
 #
 
+"""Tests for main.py (Random Tidbit)"""
+
 import sys
 import os
 from PySide6.QtCore import Qt
