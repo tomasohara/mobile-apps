@@ -15,44 +15,27 @@
 
 import datetime
 import sys
-from PySide6.QtCore import QDate
-from PySide6.QtWidgets import (QApplication, QCalendarWidget, QDateEdit,
-                                QDialog, QDialogButtonBox, QFormLayout,
-                                QFrame, QHBoxLayout, QLabel, QLineEdit,
-                                QPushButton, QVBoxLayout, QWidget)
-import os
-import requests
+from PySide6.QtCore import QDate, Qt, QTimer
+from PySide6.QtWidgets import (
+    QApplication, QCalendarWidget, QDateEdit, QDialog, QDialogButtonBox, QFormLayout,
+    QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QVBoxLayout, QWidget)
+from mezcla import poe_client, system
 
 DEFAULT_PROMPT = "Give some random bit of history for {date}--one entry"
 
 # --- Inline POE client (avoids mezcla dependency to reduce APK size) ---
 
-POE_API_KEY = os.environ.get(
-    "POE_API", "Gek9rnD3phMdVY5xM2JCTAKaMYHWR8B6oVt70-jGnc0")
-POE_URL = os.environ.get("POE_URL", "https://api.poe.com/v1")
-POE_MODEL = os.environ.get("POE_MODEL", "GPT-5-mini")
-POE_TIMEOUT = float(os.environ.get("POE_TIMEOUT", "30"))
+POE_API = system.getenv_value(
+    ## TODO1: get from vault
+    "POE_API", "Gek9rnD3phMdVY5xM2JCTAKaMYHWR8B6oVt70-jGnc0",
+    desc="Platform for Open Exploration (POE)")
+POE_MODEL = system.getenv_text(
+    "POE_MODEL", "GPT-5-mini",
+    desc="LLM model for POE")
+POE_TIMEOUT = system.getenv_float(
+    "POE_TIMEOUT", 30.0,
+    desc="Timeout in seconds")
 
-
-def poe_ask(question, model=None, api_key=None):
-    """Send a question to the POE API and return the response text"""
-    url = f"{POE_URL.rstrip('/')}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key or POE_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": model or POE_MODEL,
-        "messages": [{"role": "user", "content": question}],
-        "temperature": 0.7,
-    }
-    resp = requests.post(url, headers=headers, json=payload, timeout=POE_TIMEOUT)
-    resp.raise_for_status()
-    data = resp.json()
-    try:
-        return data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError):
-        return data.get("output", str(data))
 
 def get_random_tidbit(date_str=None, prompt_override=None,
                       prefer_topics=None, exclude_topics=None):
@@ -74,10 +57,12 @@ def get_random_tidbit(date_str=None, prompt_override=None,
         question += f". Prefer topics related to: {prefer_topics.strip()}"
     if exclude_topics and exclude_topics.strip():
         question += f". Exclude the following topics: {exclude_topics.strip()}"
+    result = ""
     try:
-        result = poe_ask(question)
+        client = poe_client.POEClient(api_key=POE_API, model=POE_MODEL)
+        result = client.ask(question)
     except Exception as exc:
-        result = f"Error fetching tidbit: {exc}"
+        result = f"Unable to fetch tidbit for {date_str}: {exc}"
     return result
 
 def main():
@@ -89,14 +74,59 @@ def main():
     window.setWindowTitle("Random Tidbit")
     window.setMinimumWidth(600)
 
+    # Style
+    app.setStyleSheet("""
+        QWidget {
+            background-color: #f7f9fc;
+            font-family: sans-serif;
+            font-size: 16px;
+        }
+        QLineEdit, QDateEdit, QTextEdit {
+            background-color: #ffffff;
+            border: 1px solid #dcdfe6;
+            border-radius: 8px;
+            padding: 8px;
+        }
+        QPushButton {
+            background-color: #608eb5;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-weight: bold;
+        }
+        #quit_button {
+            background-color: #c27c7c;
+        }
+        #cal_button {
+            background-color: transparent;
+            border: none;
+            font-size: 32px;
+            padding: 0px;
+        }
+        .suggestion {
+            color: #999999;
+            font-size: 13px;
+            font-style: italic;
+        }
+        QDateEdit::up-button, QDateEdit::down-button {
+            width: 0px;
+            height: 0px;
+            border: none;
+        }
+    """)
+
     # --- Input fields ---
     date_edit = QDateEdit()
-    date_edit.setCalendarPopup(True)
+    # Removed setCalendarPopup(True) to fix S23 Ultra crash
     date_edit.setDate(QDate.currentDate())
     date_edit.setDisplayFormat("MMMM dd")
+    date_edit.setSelectedSection(QDateEdit.NoSection)
+    # Hide the spin buttons (red circle in screenshot)
+    date_edit.setButtonSymbols(QDateEdit.NoButtons)
 
-    # Calendar button as fallback (Android doesn't support calendar popup)
     cal_button = QPushButton("📅")
+    cal_button.setObjectName("cal_button")
     cal_button.setFixedWidth(48)
 
     def open_calendar_dialog():
@@ -113,6 +143,7 @@ def main():
         dlg.setLayout(vbox)
         if dlg.exec() == QDialog.Accepted:
             date_edit.setDate(cal.selectedDate())
+            date_edit.setSelectedSection(QDateEdit.NoSection)
 
     cal_button.clicked.connect(open_calendar_dialog)
 
@@ -124,41 +155,54 @@ def main():
 
     prefer_edit = QLineEdit()
     prefer_edit.setPlaceholderText("e.g. science, art, sports")
+    prefer_sugg = QLabel("e.g. science, art, sports")
+    prefer_sugg.setProperty("class", "suggestion")
 
     exclude_edit = QLineEdit()
     exclude_edit.setPlaceholderText("e.g. wars, politics, religion")
+    exclude_sugg = QLabel("e.g. wars, politics, religion")
+    exclude_sugg.setProperty("class", "suggestion")
 
     form_layout = QFormLayout()
-    form_layout.setHorizontalSpacing(12)
-    form_layout.setVerticalSpacing(10)
     form_layout.addRow("Date:", date_row)
     form_layout.addRow("Prompt:", prompt_edit)
-    form_layout.addRow("Prefer topics:", prefer_edit)
-    form_layout.addRow("Exclude topics:", exclude_edit)
 
-    # --- Result label (with visible separator) ---
+    # Add Prefer Topics with suggestion
+    prefer_vbox = QVBoxLayout()
+    prefer_vbox.addWidget(prefer_edit)
+    prefer_vbox.addWidget(prefer_sugg)
+    form_layout.addRow("Prefer topics:", prefer_vbox)
+
+    # Add Exclude Topics with suggestion
+    exclude_vbox = QVBoxLayout()
+    exclude_vbox.addWidget(exclude_edit)
+    exclude_vbox.addWidget(exclude_sugg)
+    form_layout.addRow("Exclude topics:", exclude_vbox)
+
     separator = QFrame()
     separator.setFrameShape(QFrame.HLine)
     separator.setFrameShadow(QFrame.Sunken)
 
-    result_label = QLabel("Press Fetch to get a tidbit.")
-    result_label.setWordWrap(True)
-    result_label.setContentsMargins(4, 4, 4, 4)
+    result_text = QTextEdit()
+    result_text.setReadOnly(True)
+    # Ensure full selectability and copy-paste support
+    interaction_flags = (Qt.TextSelectableByMouse |
+                         Qt.TextSelectableByKeyboard |
+                         Qt.LinksAccessibleByMouse)
+    result_text.setTextInteractionFlags(interaction_flags)
+    result_text.setPlaceholderText("Press Fetch to get a tidbit.")
 
-    # --- Buttons ---
     fetch_button = QPushButton("Fetch Tidbit")
     quit_button = QPushButton("Quit")
+    quit_button.setObjectName("quit_button")
 
     def on_fetch():
-        """Read fields, fetch tidbit, and update the label"""
-        result_label.setText("Fetching...")
+        result_text.setPlainText("Fetching...")
         app.processEvents()
         date_str = date_edit.date().toString("MMMM dd")
-        prompt = prompt_edit.text()
-        prefers = prefer_edit.text()
-        excludes = exclude_edit.text()
-        tidbit = get_random_tidbit(date_str, prompt, prefers, excludes)
-        result_label.setText(tidbit)
+        tidbit = get_random_tidbit(date_str, prompt_edit.text(),
+                                   prefer_edit.text(), exclude_edit.text())
+        result_text.setPlainText(tidbit)
 
     fetch_button.clicked.connect(on_fetch)
     quit_button.clicked.connect(app.quit)
@@ -167,19 +211,19 @@ def main():
     button_row.addWidget(fetch_button)
     button_row.addWidget(quit_button)
 
-    # --- Main layout ---
     layout = QVBoxLayout()
-    layout.setContentsMargins(12, 12, 12, 12)
-    layout.setSpacing(10)
     layout.addLayout(form_layout)
     layout.addWidget(separator)
-    layout.addWidget(result_label, 1)
+    layout.addWidget(result_text, 1)
     layout.addLayout(button_row)
     window.setLayout(layout)
 
-    # Start app and then exit when done
     window.show()
-    on_fetch()
+    # Fix Qt quirk: ensure no initial highlighting in the date field
+    date_edit.lineEdit().deselect()
+    fetch_button.setFocus()
+    # Trigger initial fetch after the event loop starts, ensuring window is visible
+    QTimer.singleShot(0, on_fetch)
     sys.exit(app.exec())
 
 #-------------------------------------------------------------------------------
