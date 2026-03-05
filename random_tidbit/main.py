@@ -16,25 +16,29 @@
 import datetime
 import sys
 from PySide6.QtCore import QDate, Qt, QTimer
+from PySide6.QtGui import QTextCharFormat
 from PySide6.QtWidgets import (
     QApplication, QCalendarWidget, QDateEdit, QDialog, QDialogButtonBox, QFormLayout,
     QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QVBoxLayout, QWidget)
-from mezcla import poe_client, system
+from mezcla import system
 
 DEFAULT_PROMPT = "Give some random bit of history for {date}--one entry"
 
-# --- Inline POE client (avoids mezcla dependency to reduce APK size) ---
+## Note: test by Gemini to resolve stack trace issue
 
 POE_API = system.getenv_value(
     ## TODO1: get from vault
     "POE_API", "Gek9rnD3phMdVY5xM2JCTAKaMYHWR8B6oVt70-jGnc0",
-    desc="Platform for Open Exploration (POE)")
+    desc="Platform for Open Exploration (POE)",
+    skip_register=True)
 POE_MODEL = system.getenv_text(
     "POE_MODEL", "GPT-5-mini",
-    desc="LLM model for POE")
+    desc="LLM model for POE",
+    skip_register=True)
 POE_TIMEOUT = system.getenv_float(
     "POE_TIMEOUT", 30.0,
-    desc="Timeout in seconds")
+    desc="Timeout in seconds",
+    skip_register=True)
 
 
 def get_random_tidbit(date_str=None, prompt_override=None,
@@ -77,7 +81,8 @@ def main():
     # Style
     app.setStyleSheet("""
         QWidget {
-            background-color: #f7f9fc;
+            background-color: #f7f9fc;            # ghostwhite
+            color: #333333;                       # darkslategray
             font-family: sans-serif;
             font-size: 16px;
         }
@@ -130,9 +135,17 @@ def main():
     cal_button.setFixedWidth(48)
 
     def open_calendar_dialog():
+        """Create calendar for selecting date of tidbit"""
+        # Note: month and year can be selected independently,
+        # and there is < and > controls for moving backward of forward.
         dlg = QDialog(window)
         dlg.setWindowTitle("Select Date")
         cal = QCalendarWidget()
+        cal.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader)
+        fmt = QTextCharFormat()
+        fmt.setForeground(Qt.black)
+        cal.setWeekdayTextFormat(Qt.Saturday, fmt)
+        cal.setWeekdayTextFormat(Qt.Sunday, fmt)
         cal.setSelectedDate(date_edit.date())
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(dlg.accept)
