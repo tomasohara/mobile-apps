@@ -30,7 +30,7 @@ source.exclude_dirs = tests, bin, venv, backup, old, deployment, log-files, __py
 source.exclude_patterns = license,images/*/*.jpg,_*,*.log,*.list,*.whl,*.spec.*,poe_client.py
 
 # (str) Application versioning (method 1)
-version = 0.2
+version = 0.2.1
 
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]
@@ -39,8 +39,7 @@ version = 0.2
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
 ## OLD: requirements = python3,kivy
-## NOTE: mezcla removed—POE client inlined in main.py to reduce APK size
-requirements = python3,shiboken6,pyside6,requests,charset_normalizer,certifi,idna,urllib3
+requirements = python3,shiboken6,pyside6,requests,charset_normalizer,certifi,idna,urllib3,mezcla
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
