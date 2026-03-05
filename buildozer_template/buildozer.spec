@@ -23,14 +23,14 @@ source.include_exts = py,png,jpg,kv,atlas
 #source.exclude_exts = spec
 
 # (list) List of directory to exclude (let empty to not exclude anything)
-#source.exclude_dirs = tests, bin, venv
+source.exclude_dirs = tests, bin, venv, backup, old, deployment, log-files, __pycache__, .buildozer, .ruff_cache
 
 # (list) List of exclusions using pattern matching
 # Do not prefix with './'
-#source.exclude_patterns = license,images/*/*.jpg
+source.exclude_patterns = license,images/*/*.jpg,_*,*.log,*.list,*.whl,*.spec.*
 
 # (str) Application versioning (method 1)
-version = 0.1
+version = 0.1.1
 
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]

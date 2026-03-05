@@ -8,6 +8,10 @@
 import datetime
 import sys
 from PySide6.QtWidgets import QApplication, QPushButton, QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import QDate
+from PySide6.QtWidgets import (
+    QApplication, QCalendarWidget, QDateEdit, QDialog, QDialogButtonBox, QFormLayout,
+    QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget)
 from mezcla import debug, system
 
 def main():
