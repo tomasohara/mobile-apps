@@ -85,8 +85,8 @@ def main():
     # Style
     app.setStyleSheet("""
         QWidget {
-            background-color: #f7f9fc;            # ghostwhite
-            color: #333333;                       # darkslategray
+            background-color: #f7f9fc;            /* ghostwhite */
+            color: #333333;                       /* darkslategray */
             font-family: sans-serif;
             font-size: 16px;
         }
@@ -151,7 +151,9 @@ def main():
         cal.setWeekdayTextFormat(Qt.Saturday, fmt)
         cal.setWeekdayTextFormat(Qt.Sunday, fmt)
         cal.setSelectedDate(date_edit.date())
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons = QDialogButtonBox()
+        buttons.addButton("OK", QDialogButtonBox.AcceptRole)
+        buttons.addButton("Cancel", QDialogButtonBox.RejectRole)
         buttons.accepted.connect(dlg.accept)
         buttons.rejected.connect(dlg.reject)
         vbox = QVBoxLayout()
@@ -172,29 +174,19 @@ def main():
 
     prefer_edit = QLineEdit()
     prefer_edit.setPlaceholderText("e.g. science, art, sports")
-    prefer_sugg = QLabel("e.g. science, art, sports")
-    prefer_sugg.setProperty("class", "suggestion")
 
     exclude_edit = QLineEdit()
     exclude_edit.setPlaceholderText("e.g. wars, politics, religion")
-    exclude_sugg = QLabel("e.g. wars, politics, religion")
-    exclude_sugg.setProperty("class", "suggestion")
 
     form_layout = QFormLayout()
     form_layout.addRow("Date:", date_row)
     form_layout.addRow("Prompt:", prompt_edit)
 
     # Add Prefer Topics with suggestion
-    prefer_vbox = QVBoxLayout()
-    prefer_vbox.addWidget(prefer_edit)
-    prefer_vbox.addWidget(prefer_sugg)
-    form_layout.addRow("Prefer topics:", prefer_vbox)
+    form_layout.addRow("Prefer topics:", prefer_edit)
 
     # Add Exclude Topics with suggestion
-    exclude_vbox = QVBoxLayout()
-    exclude_vbox.addWidget(exclude_edit)
-    exclude_vbox.addWidget(exclude_sugg)
-    form_layout.addRow("Exclude topics:", exclude_vbox)
+    form_layout.addRow("Exclude topics:", exclude_edit)
 
     separator = QFrame()
     separator.setFrameShape(QFrame.HLine)
