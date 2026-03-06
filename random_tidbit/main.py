@@ -20,7 +20,7 @@ from PySide6.QtGui import QTextCharFormat
 from PySide6.QtWidgets import (
     QApplication, QCalendarWidget, QDateEdit, QDialog, QDialogButtonBox, QFormLayout,
     QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QVBoxLayout, QWidget)
-from mezcla import system
+from mezcla import debug, poe_client, system
 
 DEFAULT_PROMPT = "Give some random bit of history for {date}--one entry"
 
@@ -61,16 +61,20 @@ def get_random_tidbit(date_str=None, prompt_override=None,
         question += f". Prefer topics related to: {prefer_topics.strip()}"
     if exclude_topics and exclude_topics.strip():
         question += f". Exclude the following topics: {exclude_topics.strip()}"
+    debug.trace(4, f"get_random_tidbit: question={question!r}")
     result = ""
     try:
         client = poe_client.POEClient(api_key=POE_API, model=POE_MODEL)
         result = client.ask(question)
     except Exception as exc:
         result = f"Unable to fetch tidbit for {date_str}: {exc}"
+    if debug.detailed_debugging():
+        result += f"\n\n{POE_API=}\n{POE_MODEL=}"
     return result
 
 def main():
     """Entry point"""
+    debug.trace(4, "main()")
     app = QApplication(sys.argv)
 
     # Create main window widget
@@ -210,6 +214,7 @@ def main():
     quit_button.setObjectName("quit_button")
 
     def on_fetch():
+        """Gets a new tidbit for given date"""
         result_text.setPlainText("Fetching...")
         app.processEvents()
         date_str = date_edit.date().toString("MMMM dd")
@@ -232,9 +237,11 @@ def main():
     window.setLayout(layout)
 
     window.show()
+
     # Fix Qt quirk: ensure no initial highlighting in the date field
     date_edit.lineEdit().deselect()
     fetch_button.setFocus()
+    
     # Trigger initial fetch after the event loop starts, ensuring window is visible
     QTimer.singleShot(0, on_fetch)
     sys.exit(app.exec())
