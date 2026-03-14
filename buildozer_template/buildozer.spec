@@ -2,6 +2,7 @@
 
 # (str) Title of your application
 title = Buildozer Template
+## TEST: title = AI Mobile Lab
 
 # (str) Package name
 ## OLD: package.name = myapp
@@ -30,7 +31,7 @@ source.exclude_dirs = tests, bin, venv, backup, old, deployment, log-files, __py
 source.exclude_patterns = license,images/*/*.jpg,_*,*.log,*.list,*.whl,*.spec.*
 
 # (str) Application versioning (method 1)
-version = 0.1.3
+version = 0.1.5
 
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]
@@ -99,7 +100,7 @@ fullscreen = 0
 
 # (list) Permissions
 # (See https://python-for-android.readthedocs.io/en/latest/buildoptions/#build-options-1 for all the supported syntaxes and properties)
-android.permissions = android.permission.INTERNET
+android.permissions = android.permission.INTERNET,android.permission.RECORD_AUDIO,android.permission.CAMERA,android.permission.READ_EXTERNAL_STORAGE
 
 # (list) features (adds uses-feature -tags to manifest)
 #android.features = android.hardware.usb.host
