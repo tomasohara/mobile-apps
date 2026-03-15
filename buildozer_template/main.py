@@ -13,11 +13,19 @@ from PySide6.QtWidgets import (
     QApplication, QCalendarWidget, QDateEdit, QDialog, QDialogButtonBox, QFormLayout,
     QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget)
 from mezcla import debug, system
+import feature_stubs
 
 def main():
     """Entry point"""
     debug.trace(4, "main()")
     app = QApplication(sys.argv)
+
+    # Decide whether to show AI feature demos or the barebones template.
+    # Run barebones when the current time as HHMMSS is an odd integer.
+    now = datetime.datetime.now()
+    hhmmss = int(now.strftime("%H%M%S"))
+    use_features = (hhmmss % 2 == 0)
+    debug.trace(4, f"hhmmss={hhmmss} use_features={use_features}")
 
     # Create main window widget
     window = QWidget()
@@ -42,6 +50,11 @@ def main():
     # Layout
     layout = QVBoxLayout()
     layout.addWidget(label)
+    if use_features:
+        app.setStyleSheet(feature_stubs.APP_STYLE)
+        window.setWindowTitle("AI Mobile Lab")
+        window.resize(480, 780)
+        layout.addWidget(feature_stubs.create_feature_tabs())
     if debug.debugging():
         layout.addWidget(QLabel(__name__))
     layout.addWidget(button)
