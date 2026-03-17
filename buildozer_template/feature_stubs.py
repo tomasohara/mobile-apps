@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 """AI Mobile Lab — feature stub widgets for the ten on-device AI R&D demos.
 
-Imported by main.py; call create_feature_tabs() to get the QTabWidget.
+Imported by main.py; call create_feature_tabs() to get the feature launcher widget.
 
 Features:
   1. Live Tokenizer           - real-time BPE-style token color-coding
@@ -31,8 +31,8 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QFileDialog, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QProgressBar, QPushButton, QScrollArea,
-    QSizePolicy, QSplitter, QTabWidget, QTextEdit, QVBoxLayout,
+    QProgressBar, QPushButton, QScrollArea, QStackedWidget,
+    QSizePolicy, QSplitter, QTextEdit, QVBoxLayout,
     QWidget,
 )
 from mezcla import debug, system
@@ -1389,10 +1389,85 @@ class KnowledgeVaultWidget(QWidget):
 # Feature tab factory
 # ===========================================================================
 
+class FeatureMenuWidget(QWidget):
+    """Launcher-style feature menu with an orientation-aware grid."""
+
+    def __init__(self, feature_list):
+        super().__init__()
+        self._buttons = []
+        self._stack = QStackedWidget()
+        self._grid = QGridLayout()
+        self._grid_columns = 0
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.addWidget(_title("AI Mobile Lab"))
+        layout.addWidget(_hint(
+            "Choose a feature below. The menu adapts to portrait or landscape layout."))
+        layout.addWidget(_sep())
+
+        self._grid.setSpacing(8)
+
+        for index, (tab_name, widget) in enumerate(feature_list):
+            btn = QPushButton(tab_name)
+            btn.setCheckable(True)
+            btn.setMinimumHeight(54)
+            btn.clicked.connect(lambda checked=False, i=index: self._show_feature(i))
+            self._buttons.append(btn)
+
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setWidget(widget)
+            scroll.setStyleSheet("QScrollArea { border: none; }")
+            self._stack.addWidget(scroll)
+
+        layout.addLayout(self._grid)
+        layout.addWidget(self._stack, 1)
+        self._update_grid_layout()
+        self._show_feature(0)
+
+    def _show_feature(self, index):
+        self._stack.setCurrentIndex(index)
+        for btn_index, button in enumerate(self._buttons):
+            button.setChecked(btn_index == index)
+            if btn_index == index:
+                button.setStyleSheet(
+                    f"background:{DEEP}; color:{BLUE}; border:1px solid {BLUE}; "
+                    "border-radius:6px; padding:8px 14px; font-weight:bold;"
+                )
+            else:
+                button.setStyleSheet("")
+
+    def _update_grid_layout(self):
+        landscape = (self.width() >= self.height())
+        columns = 5 if landscape else 2
+        if columns == self._grid_columns:
+            return
+
+        self._grid_columns = columns
+        for index, button in enumerate(self._buttons):
+            row = index // columns
+            column = index % columns
+            self._grid.addWidget(button, row, column)
+
+        for column in range(5):
+            self._grid.setColumnStretch(column, 1 if column < columns else 0)
+
+        rows = (len(self._buttons) + columns - 1) // columns
+        for row in range(5):
+            self._grid.setRowStretch(row, 1 if row < rows else 0)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._update_grid_layout()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_grid_layout()
+
+
 def create_feature_tabs():
-    """Return a QTabWidget containing all ten AI feature demos."""
-    tabs = QTabWidget()
-    tabs.setTabPosition(QTabWidget.TabPosition.North)
+    """Return the AI feature launcher with a responsive feature menu."""
     feature_list = [
         ("⚡ Tok",   TokenizerWidget()),
         ("💬 Chat",  ChatWidget()),
@@ -1405,11 +1480,4 @@ def create_feature_tabs():
         ("🔀 Multi", MultiModalWidget()),
         ("🗄 RAG",   KnowledgeVaultWidget()),
     ]
-    for tab_name, widget in feature_list:
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(widget)
-        scroll.setStyleSheet("QScrollArea { border: none; }")
-        tabs.addTab(scroll, tab_name)
-    return tabs
-
+    return FeatureMenuWidget(feature_list)
