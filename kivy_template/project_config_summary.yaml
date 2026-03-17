@@ -1,0 +1,74 @@
+android_project/AndroidManifest.xml:
+  minSdkVersion: '21'
+  package: null
+  targetSdkVersion: '31'
+  versionCode: '10211'
+  versionName: '0.1'
+android_project/build.gradle:
+  buildToolsVersion: 37.0.0-rc2
+  compileSdk: '36'
+  minSdkVersion: '21'
+  namespace: org.test.myapp
+  targetSdkVersion: '31'
+  versionCode: '10211'
+  versionName: '0.1'
+android_project/dist_info.json:
+  archs:
+  - armeabi-v7a
+  - arm64-v8a
+  bootstrap: sdl2
+  dist_name: myapp
+  hostpython: /home/tomohara/programs/mobile-apps/kivy_template/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/native-build/python3
+  ndk_api: 21
+  python_version: '3.11'
+  recipes:
+  - hostpython3
+  - libffi
+  - openssl
+  - sdl2_image
+  - sdl2_mixer
+  - sdl2_ttf
+  - sqlite3
+  - python3
+  - sdl2
+  - setuptools
+  - six
+  - pyjnius
+  - android
+  - kivy
+  - requests
+  - urllib3
+  - chardet
+  - certifi
+  - idna
+  use_setup_py: true
+android_project/gradle.properties:
+  android.enableJetifier: 'true'
+  android.useAndroidX: 'true'
+android_project/local.properties:
+  sdk.dir: /home/tomohara/Android/Sdk
+android_project/project.properties:
+  target: android-31
+buildozer.spec:
+  app:
+    android.allow_backup: 'True'
+    android.archs: arm64-v8a
+    fullscreen: '0'
+    ios.codesign.allowed: 'false'
+    ios.ios_deploy_branch: 1.10.0
+    ios.ios_deploy_url: https://github.com/phonegap/ios-deploy
+    ios.kivy_ios_branch: master
+    ios.kivy_ios_url: https://github.com/kivy/kivy-ios
+    orientation: portrait
+    osx.kivy_version: 1.9.1
+    osx.python_version: '3'
+    package.domain: org.test
+    package.name: myapp
+    requirements: python3,kivy
+    source.dir: .
+    source.include_exts: py,png,jpg,kv,atlas
+    title: My Application
+    version: '0.1'
+  buildozer:
+    log_level: '2'
+    warn_on_root: '1'
