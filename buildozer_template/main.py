@@ -5,27 +5,47 @@
 
 """Simple Hello World style app for use with buildozer"""
 
+# Standard packages
 import datetime
+import os
 import sys
+
+
+# Installed packages
 from PySide6.QtWidgets import QApplication, QPushButton, QLabel, QVBoxLayout, QWidget
 from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
     QApplication, QCalendarWidget, QDateEdit, QDialog, QDialogButtonBox, QFormLayout,
     QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget)
+
+# Local modules
 from mezcla import debug, system
 import feature_stubs
+
+# Constants
+VIA_STUDIO = system.getenv_bool(
+    "VIA_STUDIO", False,
+    desc="Wether invoked via Android Studio")
+USE_FEATURES = system.getenv_value(
+    "USE_FEATURES", False,
+    desc="Wether invoked via Android Studio")
 
 def main():
     """Entry point"""
     debug.trace(4, "main()")
     app = QApplication(sys.argv)
+    debugging = debug.debugging(4)
+    if not debugging:
+        debugging = VIA_STUDIO
 
     # Decide whether to show AI feature demos or the barebones template.
     # Run barebones when the current time as HHMMSS is an odd integer.
-    now = datetime.datetime.now()
-    hhmmss = int(now.strftime("%H%M%S"))
-    use_features = (hhmmss % 2 == 0)
-    debug.trace(4, f"hhmmss={hhmmss} use_features={use_features}")
+    use_features = USE_FEATURES
+    if (use_features is None) and not debugging:
+        now = datetime.datetime.now()
+        hhmmss = int(now.strftime("%H%M%S"))
+        use_features = (hhmmss % 2 == 0)
+        debug.trace(4, f"hhmmss={hhmmss} use_features={use_features}")
 
     # Create main window widget
     window = QWidget()
@@ -33,7 +53,7 @@ def main():
 
     # Create widgets
     label = QLabel("buildozer template label")
-    if __debug__:
+    if debug.debugging(6):
         ## TODO4: debug.traceback.print_stack(file=sys.stderr)
         ## TODO?: debug.raise_exception(4)
         try:
