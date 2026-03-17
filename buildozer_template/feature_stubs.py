@@ -20,22 +20,19 @@ import math
 import os
 import random
 import re
-import sys
 import time
 
-from PySide6.QtCore import Qt, QTimer, QPointF, QRectF, QSize
+from PySide6.QtCore import Qt, QTimer, QPointF
 from PySide6.QtGui import (
-    QColor, QFont, QPainter, QPen, QBrush, QTextCharFormat,
-    QTextCursor, QLinearGradient,
+    QColor, QFont, QPainter, QPen, QBrush, QLinearGradient, QPolygonF,
 )
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QFileDialog, QFrame, QGridLayout,
+    QComboBox, QFileDialog, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QProgressBar, QPushButton, QScrollArea, QStackedWidget,
     QSizePolicy, QSplitter, QTextEdit, QVBoxLayout,
     QWidget,
 )
-from mezcla import debug, system
 
 # ---------------------------------------------------------------------------
 # Design tokens
@@ -391,6 +388,7 @@ class WaveformWidget(QWidget):
         t.start(35)
 
     def set_recording(self, on: bool):
+        """Enable or disable the animated recording waveform."""
         self._recording = on
 
     def _tick(self):
@@ -535,18 +533,18 @@ class ConfidenceWidget(QWidget):
         for i, (cls, col) in enumerate(zip(self._CLASSES, self._COLORS)):
             lbl = QLabel(cls)
             lbl.setStyleSheet(f"color:{col}; font-weight:bold;")
-            bar = QProgressBar()
-            bar.setRange(0, 1000)
-            bar.setValue(0)
-            bar.setStyleSheet(
+            progress_bar = QProgressBar()
+            progress_bar.setRange(0, 1000)
+            progress_bar.setValue(0)
+            progress_bar.setStyleSheet(
                 f"QProgressBar::chunk {{ background:{col}; border-radius:3px; }}")
-            bar.setFormat("")
+            progress_bar.setFormat("")
             val = QLabel("0.0 %")
             val.setStyleSheet(f"color:{col}; min-width:55px;")
             grid.addWidget(lbl, i, 0)
-            grid.addWidget(bar, i, 1)
+            grid.addWidget(progress_bar, i, 1)
             grid.addWidget(val, i, 2)
-            self._bars.append(bar)
+            self._bars.append(progress_bar)
             self._val_labels.append(val)
         layout.addLayout(grid)
         layout.addStretch()
@@ -599,6 +597,7 @@ class EmbeddingCanvas(QWidget):
         self._points: list[tuple[str, float, float, str]] = list(_EMBED_POINTS)
 
     def add_point(self, label: str, color: str = RED):
+        """Append a new point near an existing cluster centroid."""
         # Perturb an existing cluster centroid slightly
         ref = random.choice(self._points)
         x = min(0.95, max(0.05, ref[1] + random.gauss(0, 0.08)))
@@ -606,7 +605,13 @@ class EmbeddingCanvas(QWidget):
         self._points.append((label, x, y, color))
         self.update()
 
+    def reset_points(self):
+        """Restore the default embedding corpus points."""
+        self._points = list(_EMBED_POINTS)
+        self.update()
+
     def paintEvent(self, _event):
+        """Render the embedding scatter plot and cluster connections."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
@@ -619,7 +624,8 @@ class EmbeddingCanvas(QWidget):
             painter.drawLine(0, int(i * h / 10), w, int(i * h / 10))
 
         # Axis labels
-        f = QFont(); f.setPointSize(8)
+        f = QFont()
+        f.setPointSize(8)
         painter.setFont(f)
         painter.setPen(QPen(QColor(MUTED)))
         painter.drawText(4, h - 4, "PCA dim-1 →")
@@ -633,20 +639,23 @@ class EmbeddingCanvas(QWidget):
             clusters.setdefault(col, []).append((px, py))
         for col, pts in clusters.items():
             if len(pts) > 1:
-                c = QColor(col); c.setAlpha(30)
+                c = QColor(col)
+                c.setAlpha(30)
                 painter.setPen(QPen(c, 1, Qt.PenStyle.DashLine))
                 for i in range(len(pts) - 1):
                     painter.drawLine(pts[i][0], pts[i][1],
                                      pts[i+1][0], pts[i+1][1])
 
         # Points
-        f2 = QFont(); f2.setPointSize(8)
+        f2 = QFont()
+        f2.setPointSize(8)
         painter.setFont(f2)
         for label, xf, yf, col in self._points:
             px = int(xf * (w - 40) + 20)
             py = int(yf * (h - 30) + 15)
             qc = QColor(col)
-            glow = QColor(qc); glow.setAlpha(35)
+            glow = QColor(qc)
+            glow.setAlpha(35)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(glow))
             painter.drawEllipse(px - 11, py - 11, 22, 22)
@@ -659,6 +668,8 @@ class EmbeddingCanvas(QWidget):
 
 
 class EmbeddingWidget(QWidget):
+    """Interactive embedding demo using the 2-D projection canvas."""
+
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
@@ -704,8 +715,7 @@ class EmbeddingWidget(QWidget):
         self._entry.clear()
 
     def _reset(self):
-        self._canvas._points = list(_EMBED_POINTS)
-        self._canvas.update()
+        self._canvas.reset_points()
         self._status.setText("Canvas reset to default corpus.")
 
 
@@ -837,9 +847,11 @@ class CameraView(QWidget):
         t.start(80)
 
     def set_active(self, on: bool):
+        """Enable or disable the translated overlay rendering."""
         self._active = on
 
     def set_lang(self, lang: str):
+        """Update the target language shown in the overlay."""
         self._lang = lang
 
     def _tick(self):
@@ -847,6 +859,7 @@ class CameraView(QWidget):
         self.update()
 
     def paintEvent(self, _event):
+        """Render the simulated camera scene and optional translation overlay."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
@@ -867,7 +880,8 @@ class CameraView(QWidget):
 
         # Scan-line effect
         scan_y = int((self._frame * 3) % h)
-        scan_col = QColor(BLUE); scan_col.setAlpha(30)
+        scan_col = QColor(BLUE)
+        scan_col.setAlpha(30)
         painter.setPen(QPen(scan_col, 2))
         painter.drawLine(0, scan_y, w, scan_y)
 
@@ -882,7 +896,7 @@ class CameraView(QWidget):
         }
         tr = translations.get(self._lang, translations["Spanish"])
 
-        for src, xf, yf, transl_key in _CAMERA_TEXTS:
+        for src, xf, yf, _transl_key in _CAMERA_TEXTS:
             px = int(xf * (w - 80) + 10)
             py = int(yf * (h - 30) + 10)
             translated = tr.get(src, src)
@@ -891,28 +905,35 @@ class CameraView(QWidget):
 
             if self._active:
                 # Overlay box (translated)
-                ol_col = QColor(BLUE); ol_col.setAlpha(170)
+                ol_col = QColor(BLUE)
+                ol_col.setAlpha(170)
                 painter.setBrush(QBrush(ol_col))
                 painter.setPen(Qt.PenStyle.NoPen)
                 fm_w = max(60, len(translated) * 10)
                 painter.drawRoundedRect(px, py, fm_w, 24, 4, 4)
                 painter.setPen(QPen(QColor("white")))
-                f = QFont(); f.setBold(True); f.setPointSize(10)
+                f = QFont()
+                f.setBold(True)
+                f.setPointSize(10)
                 painter.setFont(f)
                 painter.drawText(px + 5, py + 17, translated)
             else:
                 # Original white text box
-                bg = QColor("#ffffff"); bg.setAlpha(200)
+                bg = QColor("#ffffff")
+                bg.setAlpha(200)
                 painter.setBrush(QBrush(bg))
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawRect(px, py, len(src) * 9 + 6, 22)
                 painter.setPen(QPen(QColor("#111111")))
-                f = QFont(); f.setBold(True); f.setPointSize(10)
+                f = QFont()
+                f.setBold(True)
+                f.setPointSize(10)
                 painter.setFont(f)
                 painter.drawText(px + 4, py + 16, src)
 
         # HUD corners
-        c = QColor(GREEN); c.setAlpha(180)
+        c = QColor(GREEN)
+        c.setAlpha(180)
         painter.setPen(QPen(c, 2))
         cs = 16
         for cx, cy in [(8, 8), (w - 8 - cs, 8), (8, h - 8 - cs), (w - 8 - cs, h - 8 - cs)]:
@@ -923,6 +944,8 @@ class CameraView(QWidget):
 
 
 class CameraWidget(QWidget):
+    """Container for the translation camera overlay demo."""
+
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
@@ -977,6 +1000,7 @@ class SparklineWidget(QWidget):
         self._color = color
 
     def push(self, value: float):
+        """Append a metric sample and repaint the sparkline."""
         self._data.pop(0)
         self._data.append(value)
         self.update()
@@ -1000,11 +1024,11 @@ class SparklineWidget(QWidget):
             y = int(h - 3 - v / 100 * (h - 6))
             pts.append(QPointF(x, y))
         # Fill area under curve
-        fill_col = QColor(self._color); fill_col.setAlpha(40)
+        fill_col = QColor(self._color)
+        fill_col.setAlpha(40)
         painter.setBrush(QBrush(fill_col))
         painter.setPen(Qt.PenStyle.NoPen)
         poly_pts = [QPointF(0, h)] + pts + [QPointF(w - 1, h)]
-        from PySide6.QtGui import QPolygonF
         painter.drawPolygon(QPolygonF(poly_pts))
         painter.setPen(QPen(QColor(self._color), 2))
         painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -1051,22 +1075,22 @@ class HeartbeatWidget(QWidget):
             lbl = QLabel(f"{name}")
             lbl.setFixedWidth(40)
             lbl.setStyleSheet(f"color:{col}; font-weight:bold;")
-            bar = QProgressBar()
-            bar.setRange(0, 100)
-            bar.setValue(0)
-            bar.setFormat("")
-            bar.setStyleSheet(
+            progress_bar = QProgressBar()
+            progress_bar.setRange(0, 100)
+            progress_bar.setValue(0)
+            progress_bar.setFormat("")
+            progress_bar.setStyleSheet(
                 f"QProgressBar::chunk {{ background:{col}; border-radius:3px; }}")
             val_lbl = QLabel(f"0 {unit}")
             val_lbl.setFixedWidth(55)
             val_lbl.setStyleSheet(f"color:{col};")
             row.addWidget(lbl)
-            row.addWidget(bar, stretch=1)
+            row.addWidget(progress_bar, stretch=1)
             row.addWidget(val_lbl)
             layout.addLayout(row)
             spark = SparklineWidget(col)
             layout.addWidget(spark)
-            self._bars.append(bar)
+            self._bars.append(progress_bar)
             self._val_labels.append(val_lbl)
             self._sparks.append(spark)
             self._ranges.append((lo, hi))
@@ -1083,7 +1107,6 @@ class HeartbeatWidget(QWidget):
         self._tick()
 
     def _tick(self):
-        _, unit_list = zip(*[(m[0], m[1]) for m in self._METRICS])
         units = [m[1] for m in self._METRICS]
         for i, (lo, hi) in enumerate(self._ranges):
             target = lo + (hi - lo) * (0.5 + 0.4 * math.sin(
