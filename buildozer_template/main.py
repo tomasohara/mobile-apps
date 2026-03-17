@@ -27,7 +27,7 @@ VIA_STUDIO = system.getenv_bool(
     "VIA_STUDIO", False,
     desc="Wether invoked via Android Studio")
 USE_FEATURES = system.getenv_value(
-    "USE_FEATURES", False,
+    "USE_FEATURES", None,
     desc="Wether invoked via Android Studio")
 
 def main():
