@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget)
 
 # Local modules
+## TEMP (force tracing):
+os.environ.setdefault("DEBUG_LEVEL", "5")
 from mezcla import debug, system
 import feature_stubs
 
@@ -29,10 +31,13 @@ VIA_STUDIO = system.getenv_bool(
 USE_FEATURES = system.getenv_value(
     "USE_FEATURES", None,
     desc="Wether invoked via Android Studio")
+## TEMP: USE_FEATURES = False
 
 def main():
     """Entry point"""
     debug.trace(4, "main()")
+    ## TEMP (for logcat check):
+    system.print_stderr(f"in main(): {__name__}")
     app = QApplication(sys.argv)
     debugging = debug.debugging(4)
     if not debugging:
