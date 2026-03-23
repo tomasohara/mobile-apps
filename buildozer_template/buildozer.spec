@@ -1,3 +1,8 @@
+# Configuration for APK build for Android using buildzoer
+#
+# note:
+# - Typical usage: buildozer android debug deploy
+# - The iOS was commented out to facilitate summary.
 [app]
 
 # (str) Title of your application
@@ -477,7 +482,9 @@ warn_on_root = 1
 #buildozer --profile demo android debug
 
 # Build for x86_64 if using the emulators
-# note: Added to avoids exception when running arm64-v8a APK on emulator, but useful
+# note:
+# - Added to avoids exception when running arm64-v8a APK on emulator, but useful
 # to avoid overhead of cross-platform emulation.
+# - Usage: buildozer --profile emu android debug deploy
 [app@emu]
 android.archs = x86_64
