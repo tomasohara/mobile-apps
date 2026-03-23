@@ -12,11 +12,9 @@ import sys
 
 
 # Installed packages
-from PySide6.QtWidgets import QApplication, QPushButton, QLabel, QVBoxLayout, QWidget
-from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
-    QApplication, QCalendarWidget, QDateEdit, QDialog, QDialogButtonBox, QFormLayout,
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget)
+    QApplication, QButtonGroup, QHBoxLayout, QLabel, QPushButton,
+    QRadioButton, QStackedWidget, QVBoxLayout, QWidget)
 
 # Local modules
 ## TEMP (force tracing):
@@ -35,6 +33,7 @@ USE_FEATURES = system.getenv_value(
 
 def main():
     """Entry point"""
+    # pylint: disable=too-many-locals,too-many-statements
     debug.trace(4, "main()")
     ## TEMP (for logcat check):
     system.print_stderr(f"in main(): {__name__}")
@@ -75,11 +74,69 @@ def main():
     # Layout
     layout = QVBoxLayout()
     layout.addWidget(label)
+
+    # Radiobox control for menu selection
+    radio_layout = QHBoxLayout()
+    btn_debug = QRadioButton("Debugging (no menu)")
+    btn_ai = QRadioButton("AI Mobile Lab")
+    btn_smart = QRadioButton("Smartphone Features")
+    
+    radio_group = QButtonGroup(window)
+    radio_group.addButton(btn_debug)
+    radio_group.addButton(btn_ai)
+    radio_group.addButton(btn_smart)
+
+    radio_layout.addWidget(btn_debug)
+    radio_layout.addWidget(btn_ai)
+    radio_layout.addWidget(btn_smart)
+    layout.addLayout(radio_layout)
+
+    # Stacked widget for the menus
+    stack = QStackedWidget()
+    
+    debug_widget = QWidget()
+    ai_widget = feature_stubs.create_ai_mobile_lab_menu()
+    smart_widget = feature_stubs.create_smartphone_features_menu()
+    
+    stack.addWidget(debug_widget)
+    stack.addWidget(ai_widget)
+    stack.addWidget(smart_widget)
+    
+    def on_menu_changed():
+        if btn_ai.isChecked():
+            stack.setCurrentWidget(ai_widget)
+            app.setStyleSheet(feature_stubs.APP_STYLE)
+            window.setWindowTitle("AI Mobile Lab")
+            window.resize(480, 780)
+        elif btn_smart.isChecked():
+            stack.setCurrentWidget(smart_widget)
+            app.setStyleSheet(feature_stubs.APP_STYLE)
+            window.setWindowTitle("Smartphone Features")
+            window.resize(480, 780)
+        else:
+            stack.setCurrentWidget(debug_widget)
+            app.setStyleSheet("")
+            window.setWindowTitle("Buildozer Template")
+            
+    btn_debug.toggled.connect(on_menu_changed)
+    btn_ai.toggled.connect(on_menu_changed)
+    btn_smart.toggled.connect(on_menu_changed)
+    
     if use_features:
-        app.setStyleSheet(feature_stubs.APP_STYLE)
-        window.setWindowTitle("AI Mobile Lab")
-        window.resize(480, 780)
-        layout.addWidget(feature_stubs.create_feature_tabs())
+        btn_ai.setChecked(True)
+    else:
+        btn_debug.setChecked(True)
+    on_menu_changed()
+
+    layout.addWidget(stack)
+
+    ## OLD:
+    ## if use_features:
+    ##     app.setStyleSheet(feature_stubs.APP_STYLE)
+    ##     window.setWindowTitle("AI Mobile Lab")
+    ##     window.resize(480, 780)
+    ##     layout.addWidget(feature_stubs.create_feature_tabs())
+
     if debug.debugging():
         layout.addWidget(QLabel(__name__))
     layout.addWidget(button)

@@ -228,6 +228,7 @@ class TokenizerWidget(QWidget):
         self._timer.start(60)
 
     def _tokenise(self):
+        # pylint: disable=too-many-locals
         text = self._input.toPlainText()
         if not text.strip():
             self._output.clear()
@@ -612,6 +613,7 @@ class EmbeddingCanvas(QWidget):
 
     def paintEvent(self, _event):
         """Render the embedding scatter plot and cluster connections."""
+        # pylint: disable=too-many-locals
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
@@ -860,6 +862,7 @@ class CameraView(QWidget):
 
     def paintEvent(self, _event):
         """Render the simulated camera scene and optional translation overlay."""
+        # pylint: disable=too-many-locals,too-many-statements
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
@@ -1133,6 +1136,7 @@ class MultiModalWidget(QWidget):
     """Unified input accepting text, voice, and image, with fused analysis."""
 
     def __init__(self):
+        # pylint: disable=too-many-statements
         super().__init__()
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
@@ -1277,6 +1281,7 @@ class KnowledgeVaultWidget(QWidget):
     """Keyword-RAG over an in-app document store."""
 
     def __init__(self):
+        # pylint: disable=too-many-statements
         super().__init__()
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
@@ -1412,10 +1417,10 @@ class KnowledgeVaultWidget(QWidget):
 # Feature tab factory
 # ===========================================================================
 
-class FeatureMenuWidget(QWidget):
-    """Launcher-style feature menu with an orientation-aware grid."""
+class BaseMenuWidget(QWidget):
+    """Abstract base class for launcher-style feature menus."""
 
-    def __init__(self, feature_list):
+    def __init__(self, title, description, feature_list):
         super().__init__()
         self._buttons = []
         self._stack = QStackedWidget()
@@ -1424,9 +1429,8 @@ class FeatureMenuWidget(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
-        layout.addWidget(_title("AI Mobile Lab"))
-        layout.addWidget(_hint(
-            "Choose a feature below. The menu adapts to portrait or landscape layout."))
+        layout.addWidget(_title(title))
+        layout.addWidget(_hint(description))
         layout.addWidget(_sep())
 
         self._grid.setSpacing(8)
@@ -1489,18 +1493,58 @@ class FeatureMenuWidget(QWidget):
         self._update_grid_layout()
 
 
-def create_feature_tabs():
-    """Return the AI feature launcher with a responsive feature menu."""
-    feature_list = [
-        ("⚡ Tok",   TokenizerWidget()),
-        ("💬 Chat",  ChatWidget()),
-        ("🎙 ASR",   VoiceWidget()),
-        ("📊 Conf",  ConfidenceWidget()),
-        ("🗺 Embed", EmbeddingWidget()),
-        ("📄 File",  SummarizerWidget()),
-        ("📷 AR",    CameraWidget()),
-        ("💓 HW",    HeartbeatWidget()),
-        ("🔀 Multi", MultiModalWidget()),
-        ("🗄 RAG",   KnowledgeVaultWidget()),
-    ]
-    return FeatureMenuWidget(feature_list)
+class AIMobileLabMenu(BaseMenuWidget):
+    """Launcher menu for AI feature demonstrations."""
+    def __init__(self):
+        feature_list = [
+            ("⚡ Tok",   TokenizerWidget()),
+            ("💬 Chat",  ChatWidget()),
+            ("🎙 ASR",   VoiceWidget()),
+            ("📊 Conf",  ConfidenceWidget()),
+            ("🗺 Embed", EmbeddingWidget()),
+            ("📄 File",  SummarizerWidget()),
+            ("📷 AR",    CameraWidget()),
+            ("💓 HW",    HeartbeatWidget()),
+            ("🔀 Multi", MultiModalWidget()),
+            ("🗄 RAG",   KnowledgeVaultWidget()),
+        ]
+        super().__init__("AI Mobile Lab", "Choose a feature below. The menu adapts to portrait or landscape layout.", feature_list)
+
+class SimpleStubWidget(QWidget):
+    """A generic stub widget displaying a title and description."""
+    def __init__(self, title_text, desc_text):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.addWidget(_title(title_text))
+        layout.addWidget(_hint(desc_text))
+        layout.addStretch()
+
+class SmartphoneFeaturesMenu(BaseMenuWidget):
+    """Launcher menu for smartphone feature prototypes."""
+    def __init__(self):
+        feature_list = [
+            ("Auth", SimpleStubWidget("🔐 Biometric Auth", "Test integration with hardware-level APIs (Fingerprint/Face Unlock) for secure user entry.")),
+            ("Voice", SimpleStubWidget("🗣 Voice Command", "Implement 'Wake Word' detection or basic voice-to-text to test microphone buffer handling.")),
+            ("Camera", SimpleStubWidget("📸 Camera Preview", "Display a low-latency live feed with a custom UI overlay (e.g., a scanning square).")),
+            ("Push", SimpleStubWidget("🔔 Push Notifications", "Trigger and handle local alerts that appear even when the app is in the background. +1")),
+            ("Haptic", SimpleStubWidget("📳 Haptic Confirmation", "Use sharp vibration 'ticks' for successful actions and 'thuds' for errors to test motor control.")),
+            ("Gallery", SimpleStubWidget("🖼 Smooth Gallery", "Efficiently load and scroll through hundreds of local high-res images from the phone's DCIM folder. +1")),
+            ("Map", SimpleStubWidget("🗺 Multi-Touch Map", "Test 'pinch-to-zoom' and 'two-finger rotate' fluidity on a custom-drawn coordinate plane.")),
+            ("GPS", SimpleStubWidget("📍 Real-Time GPS", "Track and display the user's movement on a grid with high-frequency updates. +1")),
+            ("BLE", SimpleStubWidget("📡 Bluetooth Scanner", "Discover nearby BLE devices (like headphones or smart tags) and list their signal strengths.")),
+            ("Share", SimpleStubWidget("📤 Share Sheet", "Use the native Android 'Share' menu to send text or images to other installed apps like Mail or SMS.")),
+        ]
+        super().__init__("Smartphone Features", "Ten useful features in smartphone apps for prototyping.", feature_list)
+
+## OLD:
+## def create_feature_tabs():
+##     ...
+##     return FeatureMenuWidget(feature_list)
+
+def create_ai_mobile_lab_menu():
+    """Return an instance of the AI Mobile Lab menu."""
+    return AIMobileLabMenu()
+
+def create_smartphone_features_menu():
+    """Return an instance of the Smartphone Features menu."""
+    return SmartphoneFeaturesMenu()
