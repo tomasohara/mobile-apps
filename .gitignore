@@ -1,2 +1,5 @@
+# note: separate entries in case symbolic link used (e.g., to ~/archive dir)
 .buildozer/
+.buildozer
+
 bin/

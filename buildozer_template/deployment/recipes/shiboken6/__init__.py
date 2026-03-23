@@ -12,15 +12,17 @@ from pythonforandroid.recipe import PythonRecipe
 
 class ShibokenRecipe(PythonRecipe):
     version = '6.10.1'
-    wheel_path = '/home/tomohara/Downloads/shiboken6-6.10.1-6.10.1-cp311-cp311-android_aarch64.whl'
 
     call_hostpython_via_targetpython = False
     install_in_hostpython = False
 
     def build_arch(self, arch):
         ''' Unzip the wheel and copy into site-packages of target'''
+        wheel_arch = "aarch64" if arch.arch == "arm64-v8a" else "x86_64"
+        wheel_path = f'/home/tomohara/Downloads/shiboken6-6.10.1-6.10.1-cp311-cp311-android_{wheel_arch}.whl'
+
         info('Installing {} into site-packages'.format(self.name))
-        with zipfile.ZipFile(self.wheel_path, 'r') as zip_ref:
+        with zipfile.ZipFile(wheel_path, 'r') as zip_ref:
             info('Unzip wheels and copy into {}'.format(self.ctx.get_python_install_dir(arch.arch)))
             zip_ref.extractall(self.ctx.get_python_install_dir(arch.arch))
 

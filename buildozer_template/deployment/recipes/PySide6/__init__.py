@@ -12,20 +12,22 @@ from pythonforandroid.recipe import PythonRecipe
 
 class PySideRecipe(PythonRecipe):
     version = '6.10.1'
-    wheel_path = '/home/tomohara/Downloads/PySide6-6.10.1-6.10.1-cp311-cp311-android_aarch64.whl'
     depends = ["shiboken6"]
     call_hostpython_via_targetpython = False
     install_in_hostpython = False
 
     def build_arch(self, arch):
         """Unzip the wheel and copy into site-packages of target"""
+        
+        wheel_arch = "aarch64" if arch.arch == "arm64-v8a" else "x86_64"
+        wheel_path = f'/home/tomohara/Downloads/PySide6-6.10.1-6.10.1-cp311-cp311-android_{wheel_arch}.whl'
 
         info("Copying libc++_shared.so from SDK to be loaded on startup")
         libcpp_path = f"{self.ctx.ndk.sysroot_lib_dir}/{arch.command_prefix}/libc++_shared.so"
         shutil.copyfile(libcpp_path, Path(self.ctx.get_libs_dir(arch.arch)) / "libc++_shared.so")
 
         info(f"Installing {self.name} into site-packages")
-        with zipfile.ZipFile(self.wheel_path, "r") as zip_ref:
+        with zipfile.ZipFile(wheel_path, "r") as zip_ref:
             info("Unzip wheels and copy into {}".format(self.ctx.get_python_install_dir(arch.arch)))
             zip_ref.extractall(self.ctx.get_python_install_dir(arch.arch))
 
