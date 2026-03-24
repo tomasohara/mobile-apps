@@ -114,7 +114,7 @@ android.permissions = android.permission.INTERNET,android.permission.RECORD_AUDI
 android.api = 34
 
 # (int) Minimum API your APK / AAB will support.
-android.minapi = 24
+android.minapi = 28
 
 # (int) Android SDK version to use
 #android.sdk = 20
@@ -123,7 +123,7 @@ android.minapi = 24
 #android.ndk = 23b
 
 # (int) Android NDK API to use. This is the minimum API your app will support, it should usually match android.minapi.
-android.ndk_api = 24
+android.ndk_api = 28
 
 # (bool) Use --private data storage (True) or --dir public storage (False)
 #android.private_storage = True
@@ -357,7 +357,7 @@ p4a.commit = 3762c88c56e3443efb8eba2a02a2604b680240fd
 p4a.local_recipes = %(source.dir)s/deployment/recipes
 
 # (str) Filename to the hook for p4a
-#p4a.hook =
+p4a.hook = p4a_hook.py
 
 # (str) Bootstrap to use for android builds
 ## NOTE: PySide6 requires the 'qt' bootstrap from the custom p4a fork (not sdl2).
