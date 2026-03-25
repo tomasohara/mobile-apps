@@ -20,6 +20,7 @@ class ShibokenRecipe(PythonRecipe):
         ''' Unzip the wheel and copy into site-packages of target'''
         wheel_arch = "aarch64" if arch.arch == "arm64-v8a" else "x86_64"
         wheel_path = f'/home/tomohara/Downloads/shiboken6-6.10.1-6.10.1-cp311-cp311-android_{wheel_arch}.whl'
+        ## TODO2: wheel_path = f'deployment/wheels/shiboken6-6.10.1-6.10.1-cp311-cp311-android_{wheel_arch}.whl'
 
         info('Installing {} into site-packages'.format(self.name))
         with zipfile.ZipFile(wheel_path, 'r') as zip_ref:
