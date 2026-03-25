@@ -10,7 +10,6 @@ import datetime
 import os
 import sys
 
-
 # Installed packages
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QHBoxLayout, QLabel, QPushButton,
@@ -18,7 +17,7 @@ from PySide6.QtWidgets import (
 
 # Local modules
 ## TEMP (force tracing):
-os.environ.setdefault("DEBUG_LEVEL", "5")
+## os.environ.setdefault("DEBUG_LEVEL", "5")
 from mezcla import debug, system
 import feature_stubs
 
