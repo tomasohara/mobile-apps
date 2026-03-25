@@ -3,6 +3,7 @@
 # note:
 # - Typical usage: buildozer android debug deploy
 # - The iOS was commented out to facilitate summary.
+
 [app]
 
 # (str) Title of your application
@@ -20,7 +21,7 @@ package.domain = org.test
 source.dir = .
 
 # (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas
+source.include_exts = py,png,jpg,kv,atlas,txt
 
 # (list) List of inclusions using pattern matching
 #source.include_patterns = assets/*,images/*.png
