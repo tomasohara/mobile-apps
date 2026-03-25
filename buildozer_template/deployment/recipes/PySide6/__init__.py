@@ -21,6 +21,7 @@ class PySideRecipe(PythonRecipe):
         
         wheel_arch = "aarch64" if arch.arch == "arm64-v8a" else "x86_64"
         wheel_path = f'/home/tomohara/Downloads/PySide6-6.10.1-6.10.1-cp311-cp311-android_{wheel_arch}.whl'
+        ## TODO2: wheel_path = f'deployment/wheels/PySide6-6.10.1-6.10.1-cp311-cp311-android_{wheel_arch}.whl'
 
         info("Copying libc++_shared.so from SDK to be loaded on startup")
         libcpp_path = f"{self.ctx.ndk.sysroot_lib_dir}/{arch.command_prefix}/libc++_shared.so"
