@@ -1,3 +1,9 @@
+# Configuration for APK build for Android using buildzoer
+#
+# note:
+# - Typical usage: buildozer android debug deploy
+# - The iOS was commented out to facilitate summary.
+
 [app]
 
 # (str) Title of your application
@@ -14,7 +20,7 @@ package.domain = org.test
 source.dir = .
 
 # (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas
+source.include_exts = py,png,jpg,kv,atlas,txt
 
 # (list) List of inclusions using pattern matching
 #source.include_patterns = assets/*,images/*.png
@@ -30,7 +36,7 @@ source.exclude_dirs = tests, bin, venv, backup, old, deployment, log-files, __py
 source.exclude_patterns = license,images/*/*.jpg,_*,*.log,*.list,*.whl,*.spec.*,poe_client.py
 
 # (str) Application versioning (method 1)
-version = 0.2.3
+version = 0.2.4
 
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]
@@ -39,7 +45,8 @@ version = 0.2.3
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
 ## OLD: requirements = python3,kivy
-requirements = python3,shiboken6,pyside6,requests,charset_normalizer,certifi,idna,urllib3,mezcla
+## NOTE: shiboken6 is a required dependency for PySide6
+requirements = python3,shiboken6,six,typing_extensions,pyside6,requests,charset_normalizer,certifi,idna,urllib3,mezcla
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
@@ -107,7 +114,7 @@ android.permissions = android.permission.INTERNET
 android.api = 34
 
 # (int) Minimum API your APK / AAB will support.
-android.minapi = 24
+android.minapi = 28
 
 # (int) Android SDK version to use
 #android.sdk = 20
@@ -116,7 +123,7 @@ android.minapi = 24
 #android.ndk = 23b
 
 # (int) Android NDK API to use. This is the minimum API your app will support, it should usually match android.minapi.
-android.ndk_api = 24
+android.ndk_api = 28
 
 # (bool) Use --private data storage (True) or --dir public storage (False)
 #android.private_storage = True
@@ -350,7 +357,7 @@ p4a.commit = 3762c88c56e3443efb8eba2a02a2604b680240fd
 p4a.local_recipes = %(source.dir)s/deployment/recipes
 
 # (str) Filename to the hook for p4a
-#p4a.hook =
+p4a.hook = p4a_hook.py
 
 # (str) Bootstrap to use for android builds
 ## NOTE: PySide6 requires the 'qt' bootstrap from the custom p4a fork (not sdl2).
@@ -373,7 +380,6 @@ p4a.bootstrap = qt
 ## For a QtWidgets app (QApplication + QLabel), the minimum Qt modules are Core,Gui,Widgets.
 ## The Android platform plugin (plugins_platforms_qtforandroid) is required for display.
 p4a.extra_args = --qt-libs=Core,Gui,Widgets --load-local-libs=plugins_platforms_qtforandroid --init-classes=
-
 
 
 ## OLD
@@ -473,3 +479,11 @@ warn_on_root = 1
 #    Then, invoke the command line with the "demo" profile:
 #
 #buildozer --profile demo android debug
+
+# Build for x86_64 if using the emulators
+# note:
+# - Added to avoids exception when running arm64-v8a APK on emulator, but useful
+# to avoid overhead of cross-platform emulation.
+# - Usage: buildozer --profile emu android debug deploy
+[app@emu]
+android.archs = x86_64
