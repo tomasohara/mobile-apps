@@ -13,13 +13,22 @@
 
 """Displays random historical tidbit"""
 
+# Standard packages
 import datetime
 import sys
+
+# Installed packages
 from PySide6.QtCore import QDate, Qt, QTimer
 from PySide6.QtGui import QTextCharFormat
 from PySide6.QtWidgets import (
     QApplication, QCalendarWidget, QDateEdit, QDialog, QDialogButtonBox, QFormLayout,
     QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QVBoxLayout, QWidget)
+
+# Local modules
+## TEMP (force tracing):
+## NOTE: Use p4a_env_vars.txt
+## os.environ.setdefault("DEBUG_LEVEL", "5")
+
 from mezcla import debug, poe_client, system
 
 DEFAULT_PROMPT = "Give some random bit of history for {date}--one entry"
