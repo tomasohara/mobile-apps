@@ -1,4 +1,7 @@
+#! /usr/bin/env python
+
 """python-for-android build hooks."""
+
 import os
 import glob
 import logging
