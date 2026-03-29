@@ -1,4 +1,8 @@
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """AI Mock feature modules."""
+
 import math
 import random
 import re

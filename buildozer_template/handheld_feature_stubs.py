@@ -1,4 +1,8 @@
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """Smartphone handheld mock features and Hardware Abstraction Layer."""
+
 import sys
 from PySide6.QtCore import QStandardPaths, Qt
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget, QLineEdit
