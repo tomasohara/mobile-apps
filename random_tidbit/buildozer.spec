@@ -349,7 +349,8 @@ p4a.branch = develop
 p4a.commit = 3762c88c56e3443efb8eba2a02a2604b680240fd
 
 # (str) python-for-android git clone directory (if empty, it will be automatically cloned from github)
-#p4a.source_dir =
+## OLD: p4a.source_dir = /home/tomohara/programs/python/my-python-for-android
+p4a.source_dir = my-python-for-android
 
 # (str) The directory in which python-for-android should look for your own build recipes (if any)
 ## NOTE: Must point to directory containing PySide6/ and shiboken6/ recipe subdirectories
