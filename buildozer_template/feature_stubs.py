@@ -1,5 +1,12 @@
 #! /usr/bin/env python
+#
+# note:
+# - base class for creating menus (BaseMenuWidget)
+# - developed via Gemini
+#
+
 """Core menu widget components and shared styling."""
+
 # pylint: disable=cyclic-import
 
 from PySide6.QtWidgets import (
