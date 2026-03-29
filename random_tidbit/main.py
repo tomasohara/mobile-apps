@@ -1,4 +1,5 @@
 #! /usr/bin/env python
+# -*- coding: utf-8 -*-
 #
 # Simple Qt application for showing random historical tidbit using an LLM.
 #
@@ -9,6 +10,8 @@
 # - includes ideas from following:
 #   https://www.qt.io/blog/taking-qt-for-python-to-android
 #   https://github.com/EchterAlsFake/PySide6-to-Android
+#
+# TODO2: have the form shown initially (in case delay in tidbit retrieval)
 #
 
 """Displays random historical tidbit"""
@@ -143,7 +146,7 @@ def main():
     # Hide the spin buttons (red circle in screenshot)
     date_edit.setButtonSymbols(QDateEdit.NoButtons)
 
-    cal_button = QPushButton("📅")
+    cal_button = QPushButton("\U0001F4C5")      # U+1F4C5: 📅
     cal_button.setObjectName("cal_button")
     cal_button.setFixedWidth(48)
 
