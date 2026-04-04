@@ -1,0 +1,4 @@
+[submodule "random_tidbit/my-python-for-android"]
+	path = random_tidbit/my-python-for-android
+	url = https://github.com/tomasohara/python-for-android
+	branch = my-development
