@@ -359,6 +359,9 @@ p4a.commit = 3762c88c56e3443efb8eba2a02a2604b680240fd
 ##   failure due to Py_PreInitialize() wrong-order bug in start.c (P4A_DEBUG section).
 ##   Re-enable once start.c ordering is corrected (move Py_PreInitialize before PyConfig_InitPythonConfig).
 ## DEBUG: p4a.source_dir = /home/tomohara/programs/python/my-python-for-android
+## OLD: p4a.source_dir = /home/tomohara/programs/python/my-python-for-android
+## p4a.source_dir = my-python-for-android
+## NOTE: my-python-for-android is now a submodule
 p4a.source_dir = my-python-for-android
 ## TODO: #p4a.source_dir =
 
