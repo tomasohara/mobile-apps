@@ -29,14 +29,14 @@ source.include_exts = py,png,jpg,kv,atlas,txt
 #source.exclude_exts = spec
 
 # (list) List of directory to exclude (let empty to not exclude anything)
-source.exclude_dirs = tests, bin, venv, backup, old, deployment, log-files, __pycache__, .buildozer, .ruff_cache
+source.exclude_dirs = tests, bin, venv, backup, old, deployment, log-files, __pycache__, .buildozer, .ruff_cache, my-python-for-android
 
 # (list) List of exclusions using pattern matching
 # Do not prefix with './'
 source.exclude_patterns = license,images/*/*.jpg,_*,*.log,*.list,*.whl,*.spec.*,poe_client.py
 
 # (str) Application versioning (method 1)
-version = 0.2.4
+version = 0.2.5
 
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]
@@ -114,7 +114,11 @@ android.permissions = android.permission.INTERNET
 android.api = 34
 
 # (int) Minimum API your APK / AAB will support.
-android.minapi = 28
+## TODO: raised to 28 for emulator/x86_64 support (commit 391bdd1), but likely
+##   contributed to arm64 shiboken6 SIGSEGV crash (see logcat _logcat-29mar26.1).
+##   Revisit once arm64 crash is confirmed fixed.
+## android.minapi = 28
+android.minapi = 24
 
 # (int) Android SDK version to use
 #android.sdk = 20
@@ -123,7 +127,9 @@ android.minapi = 28
 #android.ndk = 23b
 
 # (int) Android NDK API to use. This is the minimum API your app will support, it should usually match android.minapi.
-android.ndk_api = 28
+## TODO: raised to 28 to match android.minapi=28 (commit 391bdd1); reverted along with minapi above.
+## android.ndk_api = 28
+android.ndk_api = 24
 
 # (bool) Use --private data storage (True) or --dir public storage (False)
 #android.private_storage = True
@@ -349,8 +355,12 @@ p4a.branch = develop
 p4a.commit = 3762c88c56e3443efb8eba2a02a2604b680240fd
 
 # (str) python-for-android git clone directory (if empty, it will be automatically cloned from github)
+## TODO: using local my-python-for-android/ subdir (commit 37ab858) caused Python init
+##   failure due to Py_PreInitialize() wrong-order bug in start.c (P4A_DEBUG section).
+##   Re-enable once start.c ordering is corrected (move Py_PreInitialize before PyConfig_InitPythonConfig).
 ## OLD: p4a.source_dir = /home/tomohara/programs/python/my-python-for-android
-p4a.source_dir = my-python-for-android
+## p4a.source_dir = my-python-for-android
+#p4a.source_dir =
 
 # (str) The directory in which python-for-android should look for your own build recipes (if any)
 ## NOTE: Must point to directory containing PySide6/ and shiboken6/ recipe subdirectories
