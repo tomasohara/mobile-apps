@@ -27,15 +27,33 @@ _SITE_PREFIXES = [
 ] + [f"PySide6/{m}.abi3.so" for m in NEEDED_QT_MODULES]
 
 
+## BAD: hardcoded aarch64 wheel path — x86_64 builds got no Qt6 native libs
+## wheel_path = '/home/tomohara/Downloads/PySide6-6.10.1-6.10.1-cp311-cp311-android_aarch64.whl'
+
+# Map p4a arch names to wheel filename suffixes
+_ARCH_TO_WHEEL_SUFFIX = {
+    "arm64-v8a": "aarch64",
+    "x86_64": "x86_64",
+}
+_WHEEL_DIR = "/home/tomohara/Downloads"
+_VERSION = "6.10.1"
+
+
 class PySideRecipe(PythonRecipe):
-    version = '6.10.1'
-    wheel_path = '/home/tomohara/Downloads/PySide6-6.10.1-6.10.1-cp311-cp311-android_aarch64.whl'
+    version = _VERSION
+    # wheel_path is resolved per-arch in build_arch(); set a default for p4a introspection
+    wheel_path = f"{_WHEEL_DIR}/PySide6-{_VERSION}-{_VERSION}-cp311-cp311-android_aarch64.whl"
     depends = ["shiboken6"]
     call_hostpython_via_targetpython = False
     install_in_hostpython = False
 
     def build_arch(self, arch):
         """Selectively extract only needed files from the PySide6 wheel."""
+        suffix = _ARCH_TO_WHEEL_SUFFIX.get(arch.arch, arch.arch)
+        self.wheel_path = (
+            f"{_WHEEL_DIR}/PySide6-{_VERSION}-{_VERSION}-cp311-cp311-android_{suffix}.whl"
+        )
+        info(f"Using PySide6 wheel: {self.wheel_path}")
         libs_dir = Path(self.ctx.get_libs_dir(arch.arch))
         site_dir = Path(self.ctx.get_python_install_dir(arch.arch))
 

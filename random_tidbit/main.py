@@ -18,6 +18,7 @@
 
 # Standard packages
 import datetime
+import os
 import sys
 
 # Installed packages
@@ -28,9 +29,10 @@ from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QVBoxLayout, QWidget)
 
 # Local modules
-## TEMP (force tracing):
-## NOTE: Use p4a_env_vars.txt
-## os.environ.setdefault("DEBUG_LEVEL", "5")
+## NOTE: setdefault provides desktop fallback; on Android, p4a_env_vars.txt sets DEBUG_LEVEL=6
+os.environ.setdefault("DEBUG_LEVEL", "5")
+## DEBUG: verify __debug__ and DEBUG_LEVEL reach Python (output via start.c LogFile → logcat)
+sys.stderr.write(f"{__debug__=} {os.environ.get('DEBUG_LEVEL')=}\n")
 
 from mezcla import debug, poe_client, system
 

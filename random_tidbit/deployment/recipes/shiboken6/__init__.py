@@ -19,15 +19,33 @@ _SITE_PREFIXES = (
 )
 
 
+## BAD: hardcoded aarch64 wheel path — x86_64 builds got wrong arch libs
+## wheel_path = '/home/tomohara/Downloads/shiboken6-6.10.1-6.10.1-cp311-cp311-android_aarch64.whl'
+
+# Map p4a arch names to wheel filename suffixes
+_ARCH_TO_WHEEL_SUFFIX = {
+    "arm64-v8a": "aarch64",
+    "x86_64": "x86_64",
+}
+_WHEEL_DIR = "/home/tomohara/Downloads"
+_VERSION = "6.10.1"
+
+
 class ShibokenRecipe(PythonRecipe):
-    version = '6.10.1'
-    wheel_path = '/home/tomohara/Downloads/shiboken6-6.10.1-6.10.1-cp311-cp311-android_aarch64.whl'
+    version = _VERSION
+    # wheel_path is resolved per-arch in build_arch(); set a default for p4a introspection
+    wheel_path = f"{_WHEEL_DIR}/shiboken6-{_VERSION}-{_VERSION}-cp311-cp311-android_aarch64.whl"
 
     call_hostpython_via_targetpython = False
     install_in_hostpython = False
 
     def build_arch(self, arch):
         """Selectively extract only needed shiboken6 files."""
+        suffix = _ARCH_TO_WHEEL_SUFFIX.get(arch.arch, arch.arch)
+        self.wheel_path = (
+            f"{_WHEEL_DIR}/shiboken6-{_VERSION}-{_VERSION}-cp311-cp311-android_{suffix}.whl"
+        )
+        info(f"Using shiboken6 wheel: {self.wheel_path}")
         site_dir = Path(self.ctx.get_python_install_dir(arch.arch))
         libs_dir = Path(self.ctx.get_libs_dir(arch.arch))
 

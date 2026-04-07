@@ -36,7 +36,7 @@ source.exclude_dirs = tests, bin, venv, backup, old, deployment, log-files, __py
 source.exclude_patterns = license,images/*/*.jpg,_*,*.log,*.list,*.whl,*.spec.*,poe_client.py
 
 # (str) Application versioning (method 1)
-version = 0.2.5
+version = 0.2.6
 
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]
@@ -341,7 +341,7 @@ android.allow_backup = True
 # (str) python-for-android URL to use for checkout
 ## NOTE: The Qt bootstrap is available in the main kivy p4a repo since release-2024.01.21.
 ## No need for a custom fork.
-#p4a.url =
+## TODO: p4a.url = https://github.com/tomasohara/python-for-android
 
 # (str) python-for-android fork to use in case if p4a.url is not specified, defaults to upstream (kivy)
 #p4a.fork = kivy
