@@ -49,6 +49,12 @@ def before_apk_build(toolchain):
     logger = logging.getLogger('p4a.hook')
     logger.info("Running p4a_hook to patch build.py for filesystem encoding bug...")
 
+    # Disable -OO optimization so __debug__=True at runtime (Python 3.11 inlines
+    # __debug__ as a compile-time constant; -OO bakes in False permanently).
+    # build.py checks NO_OPTIMIZE_PYTHON before calling compileall.
+    os.environ.setdefault('NO_OPTIMIZE_PYTHON', '1')
+    logger.info("p4a_hook: NO_OPTIMIZE_PYTHON=%s", os.environ.get('NO_OPTIMIZE_PYTHON'))
+
     build_dir = toolchain.ctx.build_dir
     # Patch the global build.py template
     platform_dir = os.path.dirname(build_dir)
