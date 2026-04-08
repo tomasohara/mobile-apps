@@ -11,6 +11,7 @@ import os
 import sys
 
 # Installed packages
+from PySide6.QtCore import QSysInfo
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QHBoxLayout, QLabel, QPushButton,
     QRadioButton, QStackedWidget, QVBoxLayout, QWidget)
@@ -24,11 +25,17 @@ import feature_stubs
 # Constants
 VIA_STUDIO = system.getenv_bool(
     "VIA_STUDIO", False,
-    desc="Wether invoked via Android Studio")
-USE_FEATURES = system.getenv_value(
-    "USE_FEATURES", None,
-    desc="Wether invoked via Android Studio")
+    desc="Whether invoked via Android Studio")
+USE_AI_FEATURES = system.getenv_value(
+    "USE_AI_FEATURES", None,
+    desc="Whether to use the AI features")
+USE_AI_FEATURES = system.getenv_value(
+    "USE_AI_FEATURES", None,
+    desc="Whether to use the AI features")
 ## TEMP: USE_FEATURES = False
+USE_HANDHELD_FEATURES = system.getenv_value(
+    "USE_HANDHELD_FEATURES", None,
+    desc="Whether to use the handheld/smartphone features")
 
 def main():
     """Entry point"""
@@ -43,12 +50,13 @@ def main():
 
     # Decide whether to show AI feature demos or the barebones template.
     # Run barebones when the current time as HHMMSS is an odd integer.
-    use_features = USE_FEATURES
-    if (use_features is None) and not debugging:
+    use_ai_features = USE_AI_FEATURES
+    if (use_ai_features is None) and not debugging:
         now = datetime.datetime.now()
         hhmmss = int(now.strftime("%H%M%S"))
-        use_features = (hhmmss % 2 == 0)
-        debug.trace(4, f"hhmmss={hhmmss} use_features={use_features}")
+        use_ai_features = (hhmmss % 2 == 0)
+        debug.trace(4, f"hhmmss={hhmmss} use_ai_features={use_ai_features}")
+    use_handheld_features = USE_HANDHELD_FEATURES
 
     # Create main window widget
     window = QWidget()
@@ -102,16 +110,19 @@ def main():
     stack.addWidget(smart_widget)
     
     def on_menu_changed():
+        is_mobile = QSysInfo.productType() in ("android", "ios")
         if btn_ai.isChecked():
             stack.setCurrentWidget(ai_widget)
             app.setStyleSheet(feature_stubs.APP_STYLE)
             window.setWindowTitle("AI Mobile Lab")
-            window.resize(480, 780)
+            if not is_mobile:
+                window.resize(480, 780)
         elif btn_smart.isChecked():
             stack.setCurrentWidget(smart_widget)
             app.setStyleSheet(feature_stubs.APP_STYLE)
             window.setWindowTitle("Smartphone Features")
-            window.resize(480, 780)
+            if not is_mobile:
+                window.resize(480, 780)
         else:
             stack.setCurrentWidget(debug_widget)
             app.setStyleSheet("")
@@ -121,8 +132,10 @@ def main():
     btn_ai.toggled.connect(on_menu_changed)
     btn_smart.toggled.connect(on_menu_changed)
     
-    if use_features:
+    if use_ai_features:
         btn_ai.setChecked(True)
+    elif use_handheld_features:
+        btn_smart.setChecked(True)
     else:
         btn_debug.setChecked(True)
     on_menu_changed()
@@ -143,7 +156,11 @@ def main():
     debug.trace_expr(5, app, window, label, button, layout)
 
     # Start app and then exit when done
-    window.show()
+    is_mobile = QSysInfo.productType() in ("android", "ios")
+    if is_mobile:
+        window.showMaximized()
+    else:
+        window.show()
     sys.exit(app.exec())
 
 #-------------------------------------------------------------------------------
