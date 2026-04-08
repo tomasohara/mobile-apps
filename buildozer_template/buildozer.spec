@@ -8,7 +8,6 @@
 
 # (str) Title of your application
 title = Buildozer Template
-## TEST: title = AI Mobile Lab
 
 # (str) Package name
 ## OLD: package.name = myapp
@@ -30,14 +29,14 @@ source.include_exts = py,png,jpg,kv,atlas,txt
 #source.exclude_exts = spec
 
 # (list) List of directory to exclude (let empty to not exclude anything)
-source.exclude_dirs = tests, bin, venv, backup, old, deployment, log-files, __pycache__, .buildozer, .ruff_cache
+source.exclude_dirs = tests, bin, venv, backup, old, deployment, log-files, __pycache__, .buildozer, .ruff_cache, my-python-for-android
 
 # (list) List of exclusions using pattern matching
 # Do not prefix with './'
-source.exclude_patterns = license,images/*/*.jpg,_*,*.log,*.list,*.whl,*.spec.*
+source.exclude_patterns = license,images/*/*.jpg,_*,*.log,*.list,*.whl,*.spec.*,poe_client.py
 
 # (str) Application versioning (method 1)
-version = 0.1.5
+version = 0.1.6
 
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]
@@ -47,7 +46,7 @@ version = 0.1.5
 # comma separated e.g. requirements = sqlite3,kivy
 ## OLD: requirements = python3,kivy
 ## NOTE: shiboken6 is a required dependency for PySide6
-requirements = python3,shiboken6,pyside6,six,typing_extensions,requests,charset_normalizer,certifi,idna,urllib3,mezcla
+requirements = python3,shiboken6,six,typing_extensions,pyside6,requests,charset_normalizer,certifi,idna,urllib3,mezcla
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
@@ -106,7 +105,7 @@ fullscreen = 0
 
 # (list) Permissions
 # (See https://python-for-android.readthedocs.io/en/latest/buildoptions/#build-options-1 for all the supported syntaxes and properties)
-android.permissions = android.permission.INTERNET,android.permission.RECORD_AUDIO,android.permission.CAMERA,android.permission.READ_EXTERNAL_STORAGE
+android.permissions = android.permission.INTERNET
 
 # (list) features (adds uses-feature -tags to manifest)
 #android.features = android.hardware.usb.host
@@ -115,7 +114,11 @@ android.permissions = android.permission.INTERNET,android.permission.RECORD_AUDI
 android.api = 34
 
 # (int) Minimum API your APK / AAB will support.
-android.minapi = 28
+## TODO: raised to 28 for emulator/x86_64 support (commit 391bdd1), but likely
+##   contributed to arm64 shiboken6 SIGSEGV crash (see logcat _logcat-29mar26.1).
+##   Revisit once arm64 crash is confirmed fixed.
+## android.minapi = 28
+android.minapi = 24
 
 # (int) Android SDK version to use
 #android.sdk = 20
@@ -124,7 +127,9 @@ android.minapi = 28
 #android.ndk = 23b
 
 # (int) Android NDK API to use. This is the minimum API your app will support, it should usually match android.minapi.
-android.ndk_api = 28
+## TODO: raised to 28 to match android.minapi=28 (commit 391bdd1); reverted along with minapi above.
+## android.ndk_api = 28
+android.ndk_api = 24
 
 # (bool) Use --private data storage (True) or --dir public storage (False)
 #android.private_storage = True
@@ -336,21 +341,31 @@ android.allow_backup = True
 # (str) python-for-android URL to use for checkout
 ## NOTE: The Qt bootstrap is available in the main kivy p4a repo since release-2024.01.21.
 ## No need for a custom fork.
-#p4a.url =
+## TODO: p4a.url = https://github.com/tomasohara/python-for-android
+p4a.url = https://github.com/tomasohara/python-for-android
 
 # (str) python-for-android fork to use in case if p4a.url is not specified, defaults to upstream (kivy)
 #p4a.fork = kivy
 
 # (str) python-for-android branch to use, defaults to master
 ## NOTE: 'develop' and 'release-2024.01.21' both have the Qt bootstrap.
-p4a.branch = develop
+## OLD: p4a.branch = develop
+p4a.branch = my-development
 
 # (str) python-for-android specific commit to use, defaults to HEAD, must be within p4a.branch
 # Pin to commit before Python 3.14 update (keeps Python 3.11 matching PySide6 cp311 wheels)
-p4a.commit = 3762c88c56e3443efb8eba2a02a2604b680240fd
+## OLD: p4a.commit = 3762c88c56e3443efb8eba2a02a2604b680240fd
 
 # (str) python-for-android git clone directory (if empty, it will be automatically cloned from github)
-#p4a.source_dir =
+## TODO: using local my-python-for-android/ subdir (commit 37ab858) caused Python init
+##   failure due to Py_PreInitialize() wrong-order bug in start.c (P4A_DEBUG section).
+##   Re-enable once start.c ordering is corrected (move Py_PreInitialize before PyConfig_InitPythonConfig).
+## DEBUG: p4a.source_dir = /home/tomohara/programs/python/my-python-for-android
+## OLD: p4a.source_dir = /home/tomohara/programs/python/my-python-for-android
+## p4a.source_dir = my-python-for-android
+## NOTE: my-python-for-android is now a submodule
+## OLD: p4a.source_dir = my-python-for-android
+## TODO: #p4a.source_dir =
 
 # (str) The directory in which python-for-android should look for your own build recipes (if any)
 ## NOTE: Must point to directory containing PySide6/ and shiboken6/ recipe subdirectories
@@ -381,7 +396,6 @@ p4a.bootstrap = qt
 ## For a QtWidgets app (QApplication + QLabel), the minimum Qt modules are Core,Gui,Widgets.
 ## The Android platform plugin (plugins_platforms_qtforandroid) is required for display.
 p4a.extra_args = --qt-libs=Core,Gui,Widgets --load-local-libs=plugins_platforms_qtforandroid --init-classes=
-
 
 
 ## OLD
