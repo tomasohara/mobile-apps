@@ -153,11 +153,13 @@ class IOSHardware(HardwareFacade):
 
 def get_hardware():
     """Factory to retrieve hardware based on current OS."""
-    debug.trace(6, f"in: get_hardware; {sys.platform!r}")
+    from PySide6.QtCore import QSysInfo
+    os_type = QSysInfo.productType()
+    debug.trace(6, f"in: get_hardware; sys.platform={sys.platform!r}, QSysInfo.productType()={os_type!r}")
     result = None
-    if sys.platform == "android":
+    if os_type == "android":
         result = AndroidHardware()
-    elif sys.platform == "ios":
+    elif os_type == "ios":
         result = IOSHardware()
     else:
         result = DesktopHardware()
@@ -337,7 +339,10 @@ class MultiTouchMapWidget(QWidget):
         container_layout = QVBoxLayout(self.map_container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         
-        if sys.platform == "android":
+        from PySide6.QtCore import QSysInfo
+        os_type = QSysInfo.productType()
+        
+        if os_type == "android":
             try:
                 from PySide6.QtQuickWidgets import QQuickWidget
                 from PySide6.QtCore import QUrl
@@ -360,7 +365,7 @@ class MultiTouchMapWidget(QWidget):
                 self.map_area = QLabel(f"Android Map Error:\\n{exc}")
                 self.map_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 container_layout.addWidget(self.map_area)
-        elif sys.platform == "ios":
+        elif os_type == "ios":
             self.map_area = QLabel("Map Area\\n(iOS WebView to be implemented)")
             self.map_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
             container_layout.addWidget(self.map_area)
