@@ -7,7 +7,7 @@
 
 # Standard packages
 import datetime
-import os
+## OLD: import os
 import sys
 
 # Installed packages
@@ -41,8 +41,17 @@ def main():
     """Entry point"""
     # pylint: disable=too-many-locals,too-many-statements
     debug.trace(4, "main()")
+    debug.trace_expr(5, sys.platform)
     ## TEMP (for logcat check):
     system.print_stderr(f"in main(): {__name__}")
+    
+    try:
+        # pylint: disable=import-outside-toplevel,import-error,unused-import
+        from PySide6.QtWebView import QtWebView
+        QtWebView.initialize()
+    except ImportError:
+        pass
+
     app = QApplication(sys.argv)
     debugging = debug.debugging(4)
     if not debugging:

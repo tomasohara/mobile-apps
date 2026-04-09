@@ -9,8 +9,9 @@
 
 # pylint: disable=cyclic-import
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFrame, QGridLayout, QLabel, QPushButton,
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 )
 
@@ -101,12 +102,31 @@ class BaseMenuWidget(QWidget):
         self._stack = QStackedWidget()
         self._grid = QGridLayout()
         self._grid_columns = 0
+        self._is_fullscreen = False
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
-        layout.addWidget(_title(title))
-        layout.addWidget(_hint(description))
-        layout.addWidget(_sep())
+        
+        self._header_widget = QWidget()
+        header_layout = QVBoxLayout(self._header_widget)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        
+        title_row = QHBoxLayout()
+        title_row.addWidget(_title(title))
+        self._fullscreen_btn = QPushButton("⛶ Full Screen")
+        self._fullscreen_btn.setCheckable(True)
+        self._fullscreen_btn.clicked.connect(self._toggle_fullscreen)
+        title_row.addWidget(self._fullscreen_btn, alignment=Qt.AlignmentFlag.AlignRight)
+        
+        header_layout.addLayout(title_row)
+        header_layout.addWidget(_hint(description))
+        header_layout.addWidget(_sep())
+        
+        self._grid_widget = QWidget()
+        self._grid_widget.setLayout(self._grid)
+        header_layout.addWidget(self._grid_widget)
+        
+        layout.addWidget(self._header_widget)
 
         self._grid.setSpacing(8)
 
@@ -123,10 +143,18 @@ class BaseMenuWidget(QWidget):
             scroll.setStyleSheet("QScrollArea { border: none; }")
             self._stack.addWidget(scroll)
 
-        layout.addLayout(self._grid)
         layout.addWidget(self._stack, 1)
         self._update_grid_layout()
         self._show_feature(0)
+
+    def _toggle_fullscreen(self):
+        self._is_fullscreen = not self._is_fullscreen
+        if self._is_fullscreen:
+            self._grid_widget.hide()
+            self._fullscreen_btn.setText("🗗 Exit Full Screen")
+        else:
+            self._grid_widget.show()
+            self._fullscreen_btn.setText("⛶ Full Screen")
 
     def _show_feature(self, index):
         self._stack.setCurrentIndex(index)

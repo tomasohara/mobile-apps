@@ -3,9 +3,19 @@
 
 """Smartphone handheld mock features and Hardware Abstraction Layer."""
 
+# Standard packages
 import sys
+
+# Installed packages
 from PySide6.QtCore import QStandardPaths, Qt
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget, QLineEdit
+
+# Local-like modules
+## TEMP (force tracing):
+## os.environ.setdefault("DEBUG_LEVEL", "5")
+from mezcla import debug, system
+
+# Local modules
 from feature_stubs import _title, _hint, _sep, BaseMenuWidget
 
 # ===========================================================================
@@ -27,6 +37,11 @@ class HardwareFacade:
 
 class DesktopHardware(HardwareFacade):
     """Hardware implementation for desktop environments."""
+    def __init__(self):
+        super().__init__()
+        self._source = None
+        self._callback = None
+
     def authenticate_biometric(self):
         print("Desktop: Simulated Auth Success")
         return True
@@ -37,7 +52,26 @@ class DesktopHardware(HardwareFacade):
     def share_text(self, text):
         print(f"Desktop Share: {text}")
     def get_gps(self, callback):
-        callback(lat=37.7749, lon=-122.4194)
+        try:
+            # pylint: disable=import-outside-toplevel,import-error,unused-import
+            from PySide6.QtPositioning import QGeoPositionInfoSource
+            self._source = QGeoPositionInfoSource.createDefaultSource(None)
+            if self._source:
+                self._callback = callback
+                self._source.positionUpdated.connect(self._on_position_updated)
+                self._source.startUpdates()
+            else:
+                callback(lat=37.7749, lon=-122.4194)
+        except ImportError:
+            system.print_exception_info("QWebEngineView import")
+            callback(lat=37.7749, lon=-122.4194)
+
+    def _on_position_updated(self, info):
+        if info.isValid():
+            coord = info.coordinate()
+            self._callback(lat=coord.latitude(), lon=coord.longitude())
+        else:
+            self._callback(lat=37.7749, lon=-122.4194)
 
 class AndroidHardware(HardwareFacade):
     """Hardware implementation for Android devices."""
@@ -88,16 +122,32 @@ class AndroidHardware(HardwareFacade):
 class IOSHardware(HardwareFacade):
     """Hardware implementation for iOS devices."""
     def authenticate_biometric(self):
+        print("iOS Auth: To be implemented")
         return False
-    # Additional iOS specifics using pyobjus/plyer would go here
+    def vibrate(self, duration_ms):
+        print(f"iOS Vibrate: To be implemented ({duration_ms}ms)")
+    def notify(self, title, message):
+        print(f"iOS Notify: To be implemented - {title}")
+    def share_text(self, text):
+        print("iOS Share: To be implemented")
+    def get_gps(self, callback):
+        print("iOS GPS: To be implemented")
+        callback(lat=0.0, lon=0.0)
+
 
 def get_hardware():
     """Factory to retrieve hardware based on current OS."""
+    debug.trace(6, f"in: get_hardware; {sys.platform!r}")
+    result = None
     if sys.platform == "android":
-        return AndroidHardware()
-    if sys.platform == "ios":
-        return IOSHardware()
-    return DesktopHardware()
+        result = AndroidHardware()
+    elif sys.platform == "ios":
+        result = IOSHardware()
+    else:
+        result = DesktopHardware()
+    debug.trace(5, f"get_hardware() => {result!r}")
+    return result
+    
 
 hw = get_hardware()
 
@@ -258,26 +308,60 @@ class SmoothGalleryWidget(QWidget):
             self.list_widget.addItem("No standard Pictures location found.")
 
 class MultiTouchMapWidget(QWidget):
-    """7. Multi-Touch Map - Pinch-to-zoom fluidity."""
+    """7. Multi-Touch Map - Standard Google Maps UI."""
     def __init__(self):
+        # pylint: disable=import-outside-toplevel,import-error,unused-import
         super().__init__()
         layout = QVBoxLayout(self)
         layout.addWidget(_title("🗺  Multi-Touch Map"))
-        layout.addWidget(_hint("Test pinch-to-zoom. (Requires touch display)"))
+        layout.addWidget(_hint("Standard Google Maps UI via embedded WebView."))
         layout.addWidget(_sep())
         
-        self.map_area = QLabel("Map Area\\n(Pinch me)")
-        self.map_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.map_area.setStyleSheet("background: #2a2a2a; border: 1px solid #555; min-height: 200px;")
-        self.map_area.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents)
-        layout.addWidget(self.map_area)
-        layout.addStretch()
+        self.map_container = QWidget()
+        container_layout = QVBoxLayout(self.map_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        
+        if sys.platform == "android":
+            try:
+                from PySide6.QtQuickWidgets import QQuickWidget
+                from PySide6.QtCore import QUrl
+                self.quick_widget = QQuickWidget()
+                self.quick_widget.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
+                qml_code = '''
+                import QtQuick
+                import QtWebView
+                Item {
+                    WebView {
+                        anchors.fill: parent
+                        url: "https://www.google.com/maps"
+                    }
+                }
+                '''
+                self.quick_widget.setSource(QUrl("data:text/plain;charset=utf-8," + qml_code))
+                container_layout.addWidget(self.quick_widget)
+            except Exception as e:
+                self.map_area = QLabel(f"Android Map Error:\\n{e}")
+                self.map_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                container_layout.addWidget(self.map_area)
+        elif sys.platform == "ios":
+            self.map_area = QLabel("Map Area\\n(iOS WebView to be implemented)")
+            self.map_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            container_layout.addWidget(self.map_area)
+        else:
+            try:
+                from PySide6.QtWebEngineWidgets import QWebEngineView
+                from PySide6.QtCore import QUrl
+                self.web_view = QWebEngineView()
+                self.web_view.load(QUrl("https://www.google.com/maps"))
+                container_layout.addWidget(self.web_view)
+            except ImportError:
+                debug.trace_exception_info(5, "QWebEngineView import")
+                self.map_area = QLabel("Desktop Map Area\\n(QWebEngineView not available)")
+                self.map_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                container_layout.addWidget(self.map_area)
 
-    def eventFilter(self, obj, event):
-        """Handle touch events for pinch-to-zoom."""
-        # In a real widget, you override event() or viewportEvent() to handle QEvent.Type.TouchBegin
-        # and parse QTouchEvent to scale/rotate content.
-        return super().eventFilter(obj, event)
+        layout.addWidget(self.map_container)
+        layout.addStretch()
 
 class RealTimeGPSWidget(QWidget):
     """8. Real-Time GPS - Track movement."""

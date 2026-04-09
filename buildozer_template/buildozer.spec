@@ -36,7 +36,7 @@ source.exclude_dirs = tests, bin, venv, backup, old, deployment, log-files, __py
 source.exclude_patterns = license,images/*/*.jpg,_*,*.log,*.list,*.whl,*.spec.*,poe_client.py
 
 # (str) Application versioning (method 1)
-version = 0.1.6
+version = 0.1.7
 
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]
