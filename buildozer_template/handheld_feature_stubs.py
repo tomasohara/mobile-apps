@@ -355,8 +355,9 @@ class MultiTouchMapWidget(QWidget):
                 '''
                 self.quick_widget.setSource(QUrl("data:text/plain;charset=utf-8," + qml_code))
                 container_layout.addWidget(self.quick_widget)
-            except Exception as e:
-                self.map_area = QLabel(f"Android Map Error:\\n{e}")
+            except Exception as exc:
+                debug.trace_exception_info(5, f"Android Map Error: {exc}")
+                self.map_area = QLabel(f"Android Map Error:\\n{exc}")
                 self.map_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 container_layout.addWidget(self.map_area)
         elif sys.platform == "ios":
