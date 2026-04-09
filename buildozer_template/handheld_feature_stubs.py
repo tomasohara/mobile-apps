@@ -24,16 +24,16 @@ from feature_stubs import _title, _hint, _sep, BaseMenuWidget
 class HardwareFacade:
     """Base class for hardware interaction."""
     def authenticate_biometric(self):
-        """Mock auth."""
+        """Mock biometric authentication."""
         return False
     def vibrate(self, duration_ms):
-        """Mock vibrate."""
+        """Mock device vibration for the specified duration."""
     def notify(self, title, message):
-        """Mock notify."""
+        """Mock system notification."""
     def share_text(self, text):
-        """Mock share."""
+        """Mock text sharing intent."""
     def get_gps(self, callback):
-        """Mock gps."""
+        """Mock GPS location retrieval."""
 
 class DesktopHardware(HardwareFacade):
     """Hardware implementation for desktop environments."""
@@ -43,15 +43,20 @@ class DesktopHardware(HardwareFacade):
         self._callback = None
 
     def authenticate_biometric(self):
+        """Simulate biometric authentication on desktop."""
         print("Desktop: Simulated Auth Success")
         return True
     def vibrate(self, duration_ms):
+        """Simulate device vibration on desktop."""
         print(f"Desktop: Simulated vibration for {duration_ms}ms")
     def notify(self, title, message):
+        """Display a desktop notification."""
         print(f"Desktop Notification: {title} - {message}")
     def share_text(self, text):
+        """Simulate sharing text from desktop."""
         print(f"Desktop Share: {text}")
     def get_gps(self, callback):
+        """Retrieve GPS coordinates using QtPositioning or a fallback."""
         try:
             # pylint: disable=import-outside-toplevel,import-error,unused-import
             from PySide6.QtPositioning import QGeoPositionInfoSource
@@ -67,6 +72,7 @@ class DesktopHardware(HardwareFacade):
             callback(lat=37.7749, lon=-122.4194)
 
     def _on_position_updated(self, info):
+        """Handle position updates from the system geo source."""
         if info.isValid():
             coord = info.coordinate()
             self._callback(lat=coord.latitude(), lon=coord.longitude())
@@ -76,6 +82,7 @@ class DesktopHardware(HardwareFacade):
 class AndroidHardware(HardwareFacade):
     """Hardware implementation for Android devices."""
     def authenticate_biometric(self):
+        """Authenticate using Android biometric APIs."""
         try:
             from jnius import autoclass  # pylint: disable=import-outside-toplevel,import-error,unused-import
             return True
@@ -83,20 +90,23 @@ class AndroidHardware(HardwareFacade):
             return False
             
     def vibrate(self, duration_ms):
+        """Vibrate the Android device."""
         try:
             from plyer import vibrator  # pylint: disable=import-outside-toplevel,import-error
             vibrator.vibrate(time=duration_ms/1000.0)
-        except Exception:  # pylint: disable=broad-exception-caught
-            pass
+        except Exception as exc:
+            debug.trace_exception_info(5, f"AndroidHardware.vibrate: {exc}")
             
     def notify(self, title, message):
+        """Post an Android system notification."""
         try:
             from plyer import notification  # pylint: disable=import-outside-toplevel,import-error
             notification.notify(title=title, message=message)
-        except Exception:  # pylint: disable=broad-exception-caught
-            pass
+        except Exception as exc:
+            debug.trace_exception_info(5, f"AndroidHardware.notify: {exc}")
             
     def share_text(self, text):
+        """Trigger the Android system share sheet via intents."""
         try:
             from jnius import autoclass  # pylint: disable=import-outside-toplevel,import-error
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
@@ -108,29 +118,35 @@ class AndroidHardware(HardwareFacade):
             intent.setType("text/plain")
             chooser = Intent.createChooser(intent, String("Share via"))
             PythonActivity.mActivity.startActivity(chooser)
-        except Exception:  # pylint: disable=broad-exception-caught
-            pass
+        except Exception as exc:
+            debug.trace_exception_info(5, f"AndroidHardware.share_text: {exc}")
             
     def get_gps(self, callback):
+        """Start Android GPS updates via Plyer."""
         try:
             from plyer import gps  # pylint: disable=import-outside-toplevel,import-error
             gps.configure(on_location=callback)
             gps.start()
-        except Exception:  # pylint: disable=broad-exception-caught
-            pass
+        except Exception as exc:
+            debug.trace_exception_info(5, f"AndroidHardware.get_gps: {exc}")
 
 class IOSHardware(HardwareFacade):
     """Hardware implementation for iOS devices."""
     def authenticate_biometric(self):
+        """Authenticate using iOS biometric APIs (stub)."""
         print("iOS Auth: To be implemented")
         return False
     def vibrate(self, duration_ms):
+        """Vibrate the iOS device (stub)."""
         print(f"iOS Vibrate: To be implemented ({duration_ms}ms)")
     def notify(self, title, message):
+        """Post an iOS system notification (stub)."""
         print(f"iOS Notify: To be implemented - {title}")
     def share_text(self, text):
+        """Trigger the iOS share sheet (stub)."""
         print("iOS Share: To be implemented")
     def get_gps(self, callback):
+        """Start iOS GPS updates (stub)."""
         print("iOS GPS: To be implemented")
         callback(lat=0.0, lon=0.0)
 
@@ -169,7 +185,7 @@ class BiometricAuthWidget(QWidget):
         layout.addStretch()
 
     def authenticate(self):
-        """Mock authentication routine."""
+        """Invoke biometric authentication routine."""
         success = hw.authenticate_biometric()
         if success:
             self.status.setText("Status: Auth Success (or Android skeleton called)")
@@ -194,7 +210,7 @@ class VoiceCommandWidget(QWidget):
         layout.addStretch()
 
     def listen(self):
-        """Start listening for audio."""
+        """Start listening for audio wake words."""
         self.status.setText("Status: Listening... (Using PySide6 QtMultimedia / QAudioSource in real app)")
         # In a real app:
         # from PySide6.QtMultimedia import QAudioSource, QMediaFormat
@@ -221,7 +237,7 @@ class CameraPreviewWidget(QWidget):
         layout.addStretch()
 
     def start_camera(self):
-        """Initialize and start camera preview."""
+        """Initialize and start simulated camera preview."""
         self.status.setText("Camera started (Simulated). Use QCamera and QVideoWidget.")
         # from PySide6.QtMultimedia import QCamera, QMediaCaptureSession
         # from PySide6.QtMultimediaWidgets import QVideoWidget
@@ -250,7 +266,7 @@ class PushNotificationsWidget(QWidget):
         layout.addStretch()
 
     def notify(self):
-        """Send a push notification."""
+        """Trigger a local push notification alert."""
         hw.notify("Test Alert", "This is a local push notification.")
         self.status.setText("Notification requested via HardwareFacade.")
 
@@ -277,7 +293,7 @@ class HapticConfirmationWidget(QWidget):
         layout.addStretch()
 
     def vibrate(self, duration_ms):
-        """Trigger haptic feedback for duration_ms."""
+        """Trigger haptic feedback vibration."""
         hw.vibrate(duration_ms)
         self.status.setText(f"Vibration ({duration_ms}ms) requested via HardwareFacade.")
 
@@ -298,7 +314,7 @@ class SmoothGalleryWidget(QWidget):
         layout.addWidget(btn)
 
     def load_images(self):
-        """Load and display standard images."""
+        """Load and display local system images."""
         self.list_widget.clear()
         paths = QStandardPaths.standardLocations(QStandardPaths.StandardLocation.PicturesLocation)
         if paths:
@@ -381,12 +397,12 @@ class RealTimeGPSWidget(QWidget):
         layout.addStretch()
 
     def get_gps(self):
-        """Start acquiring GPS coordinates."""
+        """Initiate GPS location acquisition."""
         hw.get_gps(self.on_location)
         self.status.setText("GPS requested via HardwareFacade.")
 
     def on_location(self, **kwargs):
-        """Callback for when GPS location updates."""
+        """Handle incoming GPS location updates."""
         self.status.setText(f"Lat: {kwargs.get('lat')}, Lon: {kwargs.get('lon')}")
 
 class BluetoothScannerWidget(QWidget):
@@ -406,7 +422,7 @@ class BluetoothScannerWidget(QWidget):
         layout.addWidget(btn)
 
     def scan(self):
-        """Initiate BLE device scan."""
+        """Initiate a scan for nearby Bluetooth Low Energy devices."""
         self.list_widget.clear()
         self.list_widget.addItem("Scanning... (Skeleton)")
         # from PySide6.QtBluetooth import QBluetoothDeviceDiscoveryAgent
@@ -436,7 +452,7 @@ class ShareSheetWidget(QWidget):
         layout.addStretch()
 
     def share(self):
-        """Trigger system share intent."""
+        """Trigger the system-native share sheet for the input text."""
         text = self.text_input.text()
         hw.share_text(text)
         self.status.setText(f"Share intent triggered for: '{text}'")

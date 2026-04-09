@@ -119,6 +119,7 @@ def main():
     stack.addWidget(smart_widget)
     
     def on_menu_changed():
+        """Update UI styling and layout based on the active feature menu."""
         is_mobile = QSysInfo.productType() in ("android", "ios")
         if btn_ai.isChecked():
             stack.setCurrentWidget(ai_widget)

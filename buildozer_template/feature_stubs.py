@@ -70,12 +70,14 @@ QComboBox::drop-down {{ border:none; }}
 # ---------------------------------------------------------------------------
 
 def _title(text, color=RED):
+    """Create a formatted title label."""
     lbl = QLabel(text)
     lbl.setStyleSheet(f"color:{color}; font-size:15px; font-weight:bold; padding:2px 0;")
     return lbl
 
 
 def _hint(text):
+    """Create a formatted hint or description label."""
     lbl = QLabel(text)
     lbl.setStyleSheet(f"color:{MUTED}; font-size:11px;")
     lbl.setWordWrap(True)
@@ -83,6 +85,7 @@ def _hint(text):
 
 
 def _sep():
+    """Create a horizontal separator line."""
     f = QFrame()
     f.setFrameShape(QFrame.Shape.HLine)
     f.setStyleSheet(f"background:{DEEP}; max-height:1px; margin:4px 0;")
@@ -148,6 +151,7 @@ class BaseMenuWidget(QWidget):
         self._show_feature(0)
 
     def _toggle_fullscreen(self):
+        """Toggle the visibility of the menu navigation to maximize the feature view."""
         self._is_fullscreen = not self._is_fullscreen
         if self._is_fullscreen:
             self._grid_widget.hide()
@@ -157,6 +161,7 @@ class BaseMenuWidget(QWidget):
             self._fullscreen_btn.setText("⛶ Full Screen")
 
     def _show_feature(self, index):
+        """Switch the stacked widget to the selected feature index and update button states."""
         self._stack.setCurrentIndex(index)
         for btn_index, button in enumerate(self._buttons):
             button.setChecked(btn_index == index)
@@ -169,6 +174,7 @@ class BaseMenuWidget(QWidget):
                 button.setStyleSheet("")
 
     def _update_grid_layout(self):
+        """Rearrange the menu buttons into a grid based on window orientation."""
         landscape = (self.width() >= self.height())
         columns = 5 if landscape else 2
         if columns == self._grid_columns:
@@ -188,10 +194,12 @@ class BaseMenuWidget(QWidget):
             self._grid.setRowStretch(row, 1 if row < rows else 0)
 
     def showEvent(self, event):
+        """Handle widget show events by updating the layout."""
         super().showEvent(event)
         self._update_grid_layout()
 
     def resizeEvent(self, event):
+        """Handle widget resize events by updating the layout."""
         super().resizeEvent(event)
         self._update_grid_layout()
 

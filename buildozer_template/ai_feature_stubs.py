@@ -144,10 +144,12 @@ class TokenizerWidget(QWidget):
         self._t0 = 0.0
 
     def _schedule(self):
+        """Schedule a tokenisation update."""
         self._t0 = time.time()
         self._timer.start(60)
 
     def _tokenise(self):
+        """Perform BPE-style tokenisation on the input text."""
         # pylint: disable=too-many-locals
         text = self._input.toPlainText()
         if not text.strip():
@@ -240,10 +242,12 @@ class ChatWidget(QWidget):
 
     # ------------------------------------------------------------------
     def _add_message(self, role: str, text: str):
+        """Append a message to the chat history and update the display."""
         self._messages.append((role, text))
         self._render()
 
     def _render(self, extra_ai: str = ""):
+        """Render the chat conversation as HTML."""
         parts = []
         for role, text in self._messages:
             css = self._AI_CSS if role == "ai" else self._USER_CSS
@@ -261,6 +265,7 @@ class ChatWidget(QWidget):
             self._chat.verticalScrollBar().maximum())
 
     def _send(self):
+        """Handle the user sending a message."""
         text = self._entry.text().strip()
         if not text or self._typing_timer.isActive():
             return
@@ -272,11 +277,13 @@ class ChatWidget(QWidget):
         QTimer.singleShot(400, lambda: self._start_stream(response))
 
     def _start_stream(self, target: str):
+        """Initiate streaming of an AI response."""
         self._typing_text = ""
         self._typing_target = target
         self._typing_timer.start(22)
 
     def _type_tick(self):
+        """Update the typewriter effect for the streaming response."""
         idx = len(self._typing_text)
         if idx < len(self._typing_target):
             # Stream in chunks of 1-3 chars to vary pacing
@@ -313,6 +320,7 @@ class WaveformWidget(QWidget):
         self._recording = on
 
     def _tick(self):
+        """Update the waveform animation state."""
         if self._recording:
             self._phase += 0.18
             for i in range(self._N):
@@ -324,6 +332,7 @@ class WaveformWidget(QWidget):
         self.update()
 
     def paintEvent(self, _event):
+        """Render the animated waveform bars."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
@@ -383,6 +392,7 @@ class VoiceWidget(QWidget):
         self._word_timer.timeout.connect(self._next_word)
 
     def _toggle(self):
+        """Toggle the recording state and update UI components."""
         self._recording = not self._recording
         self._wave.set_recording(self._recording)
         if self._recording:
@@ -404,6 +414,7 @@ class VoiceWidget(QWidget):
             self._conf_lbl.setText(f"ASR confidence: {conf:.1f} %")
 
     def _next_word(self):
+        """Simulate receiving the next word in the ASR transcript."""
         words = self._target_sentence.split()
         if self._word_idx < len(words):
             self._current_words.append(words[self._word_idx])
@@ -480,6 +491,7 @@ class ConfidenceWidget(QWidget):
         layout.addWidget(self._model_lbl)
 
     def _analyse(self):
+        """Analyse the input text and update confidence targets."""
         if not self._entry.text().strip():
             return
         raw = [random.random() ** 0.7 for _ in range(5)]
@@ -491,6 +503,7 @@ class ConfidenceWidget(QWidget):
             f"Model: distilbert-q4 | Latency: {lat:.1f} ms | Device: NPU")
 
     def _anim_tick(self):
+        """Animate the progress bars towards their target values."""
         done = True
         for i in range(5):
             diff = self._targets[i] - self._current[i]
@@ -624,6 +637,7 @@ class EmbeddingWidget(QWidget):
         layout.addWidget(self._status)
 
     def _embed(self):
+        """Embed the user-provided text into the vector space."""
         text = self._entry.text().strip()
         if not text:
             return
@@ -637,6 +651,7 @@ class EmbeddingWidget(QWidget):
         self._entry.clear()
 
     def _reset(self):
+        """Reset the embedding canvas to the default state."""
         self._canvas.reset_points()
         self._status.setText("Canvas reset to default corpus.")
 
@@ -699,6 +714,7 @@ class SummarizerWidget(QWidget):
         self._raw_text = ""
 
     def _open_file(self):
+        """Open a file dialog and read the selected text file."""
         path, _ = QFileDialog.getOpenFileName(
             self, "Open text file", os.path.expanduser("~"),
             "Text files (*.txt *.md *.py *.rst *.csv);;All files (*)")
@@ -722,6 +738,7 @@ class SummarizerWidget(QWidget):
         self._prog_timer.start(35)
 
     def _tick_progress(self):
+        """Update the summarisation progress bar animation."""
         self._prog_val = min(100, self._prog_val + random.randint(2, 6))
         self._progress.setValue(self._prog_val)
         if self._prog_val >= 100:
@@ -730,6 +747,7 @@ class SummarizerWidget(QWidget):
             self._show_summary()
 
     def _show_summary(self):
+        """Generate and display an extractive summary of the text."""
         text = self._raw_text
         # Extractive summary: score sentences by keyword density
         sentences = re.split(r'(?<=[.!?])\s+', text)
@@ -777,6 +795,7 @@ class CameraView(QWidget):
         self._lang = lang
 
     def _tick(self):
+        """Advance the camera animation frame."""
         self._frame += 1
         self.update()
 
@@ -898,6 +917,7 @@ class CameraWidget(QWidget):
         self._active = False
 
     def _toggle(self):
+        """Toggle the AR translation overlay on or off."""
         self._active = not self._active
         self._cam.set_active(self._active)
         if self._active:
@@ -929,6 +949,7 @@ class SparklineWidget(QWidget):
         self.update()
 
     def paintEvent(self, _event):
+        """Render the rolling metric sparkline."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
@@ -1030,6 +1051,7 @@ class HeartbeatWidget(QWidget):
         self._tick()
 
     def _tick(self):
+        """Update hardware telemetry metrics with realistic fluctuations."""
         units = [m[1] for m in self._METRICS]
         for i, (lo, hi) in enumerate(self._ranges):
             target = lo + (hi - lo) * (0.5 + 0.4 * math.sin(
@@ -1143,6 +1165,7 @@ class MultiModalWidget(QWidget):
         self._img_captured = False
 
     def _on_toggle(self, mod: str, on: bool):
+        """Handle modality button toggles and update input visibility."""
         chip = self._chips[mod]
         marker = "●" if on else "○"
         chip.setText(f"  {mod}: {marker}  ")
@@ -1155,6 +1178,7 @@ class MultiModalWidget(QWidget):
         self._img_lbl.setVisible("image" in self._active_mods)
 
     def _fake_record(self):
+        """Simulate capturing voice input."""
         self._voice_captured = True
         sent = random.choice(_TRANSCRIPTS)
         self._voice_lbl.setText(f'🎙  Captured: "{sent[:60]}..."')
@@ -1163,6 +1187,7 @@ class MultiModalWidget(QWidget):
         self._voice_btn.setChecked(True)
 
     def _fake_snap(self):
+        """Simulate capturing an image and detecting objects."""
         self._img_captured = True
         labels = ["coffee mug", "laptop keyboard", "notebook", "street sign", "book cover"]
         self._img_lbl.setText(f"📷  Detected objects: {', '.join(random.sample(labels, 3))}")
@@ -1171,6 +1196,7 @@ class MultiModalWidget(QWidget):
         self._img_btn.setChecked(True)
 
     def _process(self):
+        """Process and fuse the activated input modalities."""
         if not self._active_mods:
             self._output.setPlainText("⚠  No modalities activated.  Toggle at least one above.")
             return
@@ -1269,6 +1295,7 @@ class KnowledgeVaultWidget(QWidget):
         self._typing_timer.timeout.connect(self._type_tick)
 
     def _search(self):
+        """Perform keyword-based RAG search over the local vault."""
         query = self._query.text().strip().lower()
         if not query:
             return
@@ -1309,6 +1336,7 @@ class KnowledgeVaultWidget(QWidget):
         self._typing_timer.start(20)
 
     def _type_tick(self):
+        """Animate the AI's grounded answer with a typewriter effect."""
         idx = len(self._typing_text)
         if idx < len(self._typing_target):
             self._typing_text = self._typing_target[:idx + random.randint(1, 4)]
@@ -1318,6 +1346,7 @@ class KnowledgeVaultWidget(QWidget):
             self._answer.setPlainText(self._typing_target)
 
     def _add_doc(self):
+        """Add a new document to the knowledge vault from disk."""
         path, _ = QFileDialog.getOpenFileName(
             self, "Add document to vault", os.path.expanduser("~"),
             "Text files (*.txt *.md *.py *.rst);;All files (*)")
