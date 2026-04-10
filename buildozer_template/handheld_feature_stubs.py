@@ -1,5 +1,19 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
+#
+#--------------------------------------------------------------------------------
+# Clarification of confusing Qt support for web
+#
+# Key Differences
+# Feature 	  Qt WebEngine	                   QWebEngineView	                        Qt WebView
+# Primary Role	  The overall module/framework.	   The specific C++ class used in Widgets.	A lightweight module for mobile/cross-platform.
+# Backend Engine  Chromium.	                   Chromium.	                                Native engine (e.g., Safari on iOS, WebView2 on Windows).
+# Best For	  Full-featured desktop browsers.  Desktop Widget applications.	                Mobile apps (Android/iOS) or basic web viewing.
+# Platform	  Windows, macOS, Linux.	   Desktop platforms only.	                Android, iOS, Windows, macOS, Linux.
+#
+# note: via Gemini
+## TODO4: reformat (e.g., transpose data)
+#
 
 """Smartphone handheld mock features and Hardware Abstraction Layer."""
 
@@ -7,6 +21,7 @@
 import sys
 
 # Installed packages
+# note: PySide6 is part of Qt for Python (along with Shiboken6 binding generator)
 from PySide6.QtCore import QStandardPaths, Qt
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget, QLineEdit
 
@@ -348,8 +363,9 @@ class MultiTouchMapWidget(QWidget):
                 from PySide6.QtCore import QUrl
                 self.quick_widget = QQuickWidget()
                 self.quick_widget.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
-                # note: QtWebView apparently better than QWebEngineView for Android.
-                # See https://stackoverflow.com/questions/29055475/qwebview-or-qwebengineview
+                # note: QtWebView apparently better than QWebEngineView for Android [see above].
+                # QWebView uses WebKit as the backend, whereas QWebEngineView uses Chromium.
+                # See https://stackoverflow.com/questions/29055475/qwebview-or-qwebengineview.
                 qml_code = '''
                 import QtQuick
                 import QtWebView
