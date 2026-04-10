@@ -2,3 +2,7 @@
 	path = random_tidbit/my-python-for-android
 	url = https://github.com/tomasohara/python-for-android
 	branch = my-development
+[submodule "random_tidbit/mezcla"]
+	path = random_tidbit/mezcla
+	url = https://github.com/tomasohara/mezcla
+	branch = development

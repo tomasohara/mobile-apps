@@ -22,11 +22,13 @@ import os
 import sys
 
 # Installed packages
-from PySide6.QtCore import QDate, Qt, QTimer
-from PySide6.QtGui import QTextCharFormat
+from PySide6.QtCore import QDate, QEvent, QObject, Qt, QThread, QTimer
+from PySide6.QtGui import QFont, QPixmap, QTextCharFormat
 from PySide6.QtWidgets import (
-    QApplication, QCalendarWidget, QDateEdit, QDialog, QDialogButtonBox, QFormLayout,
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QVBoxLayout, QWidget)
+    QApplication, QCalendarWidget, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
+    QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit,
+    QVBoxLayout, QWidget)
+from PySide6.QtCore import Signal
 
 # Local modules
 ## NOTE: setdefault provides desktop fallback; on Android, p4a_env_vars.txt sets DEBUG_LEVEL=6
@@ -34,7 +36,9 @@ os.environ.setdefault("DEBUG_LEVEL", "5")
 ## DEBUG: verify __debug__ and DEBUG_LEVEL reach Python (output via start.c LogFile → logcat)
 sys.stderr.write(f"{__debug__=} {os.environ.get('DEBUG_LEVEL')=}\n")
 
-from mezcla import debug, poe_client, system
+from mezcla import debug, system
+# Note: poe_client is imported lazily inside each function (not at module level)
+# to avoid triggering mezcla's Main argument-parsing machinery at import time.
 
 DEFAULT_PROMPT = "Give some random bit of history for {date}--one entry"
 
@@ -53,15 +57,44 @@ POE_TIMEOUT = system.getenv_float(
     "POE_TIMEOUT", 30.0,
     desc="Timeout in seconds",
     skip_register=True)
+POE_IMAGE_MODEL = system.getenv_text(
+    "POE_IMAGE_MODEL", "FLUX-schnell",
+    desc="Image generation model for POE",
+    skip_register=True)
+SHOW_IMAGE = system.getenv_bool(
+    "SHOW_IMAGE", True,
+    desc="Whether to generate and show an image alongside the tidbit",
+    skip_register=True)
+
+# Result cache: (date_str, age_group) -> {"tidbit", "image_bytes", "image_prompt"}
+_fetch_cache = {}
+
+def _load_local_poe_client():
+    """Load the local poe_client.py by absolute path so the mezcla version is never used.
+    Returns the module object (with generate_image_prompt / generate_image).
+    """
+    import importlib.util
+    import sys as _sys
+    cached = _sys.modules.get("_local_poe_client")
+    if cached is not None:
+        return cached
+    _poc_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "poe_client.py")
+    _spec = importlib.util.spec_from_file_location("_local_poe_client", _poc_path)
+    _mod = importlib.util.module_from_spec(_spec)
+    # Register under private name so 'import poe_client' still works normally
+    _sys.modules["_local_poe_client"] = _mod
+    _spec.loader.exec_module(_mod)
+    return _mod
 
 
 def get_random_tidbit(date_str=None, prompt_override=None,
-                      prefer_topics=None, exclude_topics=None):
+                      prefer_topics=None, exclude_topics=None, age_group=None):
     """Fetch a random historical tidbit via POE API
     DATE_STR: date like "March 01" (defaults to today)
     PROMPT_OVERRIDE: custom prompt (use {date} placeholder for the date)
     PREFER_TOPICS: comma-separated topics to prefer
     EXCLUDE_TOPICS: comma-separated topics to exclude
+    AGE_GROUP: target audience age range (e.g., "3-5", "18+")
     """
     if not date_str:
         date_str = datetime.date.today().strftime("%B %d")
@@ -75,16 +108,38 @@ def get_random_tidbit(date_str=None, prompt_override=None,
         question += f". Prefer topics related to: {prefer_topics.strip()}"
     if exclude_topics and exclude_topics.strip():
         question += f". Exclude the following topics: {exclude_topics.strip()}"
+    if age_group and age_group != "18+":
+        question += f". Tailor the content to be appropriate for ages {age_group}."
     debug.trace(4, f"get_random_tidbit: question={question!r}")
     result = ""
     try:
-        client = poe_client.POEClient(api_key=POE_API, model=POE_MODEL)
+        # Use local poe_client.py (not mezcla's version) to get image-generation support
+        poc = _load_local_poe_client()
+        client = poc.POEClient(api_key=POE_API, model=POE_MODEL)
         result = client.ask(question)
     except Exception as exc:
         result = f"Unable to fetch tidbit for {date_str}: {exc}"
-    if debug.detailed_debugging():
-        result += f"\n\n{POE_API=}\n{POE_MODEL=}"
     return result
+
+def get_tidbit_image(tidbit, image_model=None, age_group=None):
+    """Generate an image illustrating TIDBIT via POE image generation.
+    Returns (image_bytes, image_prompt); image_bytes is None on failure.
+    Uses an LLM call to convert the tidbit into a visual, NSFW-filtered prompt first.
+    AGE_GROUP: target audience age range (e.g., "3-5", "18+") for filtering.
+    """
+    image_bytes = None
+    image_prompt = ""
+    try:
+        # Use local poe_client.py (not mezcla's version) to get image-generation support
+        poc = _load_local_poe_client()
+        client = poc.POEClient(api_key=POE_API, model=POE_MODEL)
+        image_prompt = client.generate_image_prompt(tidbit, age_group=age_group)
+        debug.trace(4, f"get_tidbit_image: image_prompt={image_prompt!r}")
+        image_bytes = client.generate_image(image_prompt, model=image_model or POE_IMAGE_MODEL)
+    except Exception as exc:
+        debug.trace(3, f"get_tidbit_image: failed: {exc}")
+        image_prompt = image_prompt or f"(error: {exc})"
+    return image_bytes, image_prompt
 
 def main():
     """Entry point"""
@@ -99,43 +154,74 @@ def main():
     # Style
     app.setStyleSheet("""
         QWidget {
-            background-color: #f7f9fc;            /* ghostwhite */
-            color: #333333;                       /* darkslategray */
+            background-color: #f4f6f9;
+            color: #2d3748;
             font-family: sans-serif;
-            font-size: 16px;
+            font-size: 13px;
         }
-        QLineEdit, QDateEdit, QTextEdit {
+        QLineEdit, QDateEdit, QComboBox, QTextEdit {
             background-color: #ffffff;
-            border: 1px solid #dcdfe6;
-            border-radius: 8px;
-            padding: 8px;
+            border: 1px solid #d2d8e3;
+            border-radius: 6px;
+            padding: 5px 8px;
         }
+        QComboBox::drop-down { border: none; }
         QPushButton {
-            background-color: #608eb5;
+            background-color: #4a7fa8;
             color: #ffffff;
             border: none;
-            border-radius: 8px;
-            padding: 10px 20px;
+            border-radius: 6px;
+            padding: 6px 14px;
             font-weight: bold;
+            font-size: 13px;
+        }
+        QPushButton:disabled {
+            background-color: #a0b8cc;
+        }
+        QPushButton:hover:!disabled {
+            background-color: #3a6f98;
         }
         #quit_button {
-            background-color: #c27c7c;
+            background-color: #4a8c5c;
+        }
+        #quit_button:hover {
+            background-color: #3a7c4c;
         }
         #cal_button {
             background-color: transparent;
             border: none;
-            font-size: 32px;
+            font-size: 22px;
             padding: 0px;
-        }
-        .suggestion {
-            color: #999999;
-            font-size: 13px;
-            font-style: italic;
         }
         QDateEdit::up-button, QDateEdit::down-button {
             width: 0px;
             height: 0px;
             border: none;
+        }
+        #result_card {
+            background-color: #ffffff;
+            border: 1px solid #d2d8e3;
+            border-radius: 8px;
+        }
+        #image_card {
+            background-color: #ffffff;
+            border: 1px solid #d2d8e3;
+            border-radius: 8px;
+        }
+        #image_caption {
+            color: #7a8898;
+            font-size: 10px;
+            font-style: italic;
+            padding: 4px 6px;
+        }
+        #debug_pane {
+            background-color: #1a1b2e;
+            color: #8a9bb0;
+            border: none;
+            border-radius: 0px;
+            padding: 4px;
+            font-family: monospace;
+            font-size: 9px;
         }
     """)
 
@@ -202,6 +288,13 @@ def main():
     # Add Exclude Topics with suggestion
     form_layout.addRow("Exclude topics:", exclude_edit)
 
+    # Age group combobox: controls content and image filtering
+    AGE_GROUPS = ["18+", "14-18", "9-14", "6-9", "3-5"]
+    age_combo = QComboBox()
+    age_combo.addItems(AGE_GROUPS)
+    age_combo.setCurrentIndex(0)      # default: 18+
+    form_layout.addRow("Age group:", age_combo)
+
     separator = QFrame()
     separator.setFrameShape(QFrame.HLine)
     separator.setFrameShadow(QFrame.Sunken)
@@ -213,33 +306,237 @@ def main():
                          Qt.TextSelectableByKeyboard |
                          Qt.LinksAccessibleByMouse)
     result_text.setTextInteractionFlags(interaction_flags)
-    result_text.setPlaceholderText("Press Fetch to get a tidbit.")
+    result_text.setPlaceholderText("Press Fetch (or F5) to get a tidbit.")
+    result_text.setStyleSheet(
+        "QTextEdit { border: none; background-color: transparent; }"
+    )
+
+    # Wrap result_text in a card widget for visual consistency
+    result_card = QWidget()
+    result_card.setObjectName("result_card")
+    result_card_layout = QVBoxLayout(result_card)
+    result_card_layout.setContentsMargins(6, 6, 6, 6)
+    result_card_layout.addWidget(result_text)
+
+    # Image pane (~1/3 width): shows a generated illustration of the tidbit.
+    # Wrapped in a card widget (image_card) with a caption label below.
+    image_label = QLabel()
+    image_label.setAlignment(Qt.AlignCenter)
+    image_label.setMinimumWidth(180)
+    image_label.setMinimumHeight(160)
+    image_label.setWordWrap(True)
+    image_label.setText("Image will appear\nafter fetch.")
+    image_label.setStyleSheet(
+        "QLabel { border: none; background-color: transparent;"
+        " color: #999; font-size: 12px; }"
+    )
+
+    image_caption = QLabel("")
+    image_caption.setObjectName("image_caption")
+    image_caption.setWordWrap(True)
+    image_caption.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+
+    image_card = QWidget()
+    image_card.setObjectName("image_card")
+    image_card_layout = QVBoxLayout(image_card)
+    image_card_layout.setContentsMargins(4, 4, 4, 4)
+    image_card_layout.setSpacing(3)
+    image_card_layout.addWidget(image_label, 1)
+    image_card_layout.addWidget(image_caption)
+
+    # Stored raw pixmap + resize-event filter so image rescales with the window
+    _raw_pixmap = [None]
+
+    def _rescale_image_label():
+        """Rescale stored pixmap to current label dimensions, preserving aspect ratio."""
+        pix = _raw_pixmap[0]
+        if pix is None or pix.isNull():
+            return
+        w = image_label.width()
+        h = image_label.height()
+        if w <= 0 or h <= 0:
+            return
+        scaled = pix.scaled(w, h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        image_label.setPixmap(scaled)
+
+    class _ImageResizer(QObject):
+        def eventFilter(self, watched, event):
+            if watched is image_label and event.type() == QEvent.Type.Resize:
+                _rescale_image_label()
+            return False
+
+    _img_resizer = _ImageResizer(window)
+    image_label.installEventFilter(_img_resizer)
+
+    # Debug pane: small monospace pane at the bottom with info/diagnostics
+    debug_pane = QTextEdit()
+    debug_pane.setObjectName("debug_pane")
+    debug_pane.setReadOnly(True)
+    debug_pane.setMaximumHeight(90)
+    debug_font = QFont("monospace")
+    debug_font.setPointSize(8)
+    debug_pane.setFont(debug_font)
+    debug_pane.setPlaceholderText("Debug info will appear after fetch.")
 
     fetch_button = QPushButton("Fetch Tidbit")
     quit_button = QPushButton("Quit")
     quit_button.setObjectName("quit_button")
 
-    def on_fetch():
-        """Gets a new tidbit for given date"""
-        result_text.setPlainText("Fetching...")
-        app.processEvents()
-        date_str = date_edit.date().toString("MMMM dd")
-        tidbit = get_random_tidbit(date_str, prompt_edit.text(),
-                                   prefer_edit.text(), exclude_edit.text())
+    def _set_debug_info(date_str, tidbit, image_prompt, age_group, extra=""):
+        """Populate the debug pane with run details."""
+        api_key_display = (POE_API[:8] + "…") if POE_API else "(not set)"
+        lines = [
+            f"date={date_str}  age_group={age_group}  {extra}",
+            f"text_model={POE_MODEL}  image_model={POE_IMAGE_MODEL}",
+            f"api_key={api_key_display}",
+            f"tidbit_len={len(tidbit)}",
+            f"image_prompt: {image_prompt or '(none)'}",
+        ]
+        if debug.detailed_debugging():
+            lines.append(f"{POE_API=}  {POE_MODEL=}")
+        debug_pane.setPlainText("\n".join(lines))
+
+    # Worker thread for background fetch (keeps the form visible and responsive)
+    class _FetchWorker(QThread):
+        """Background thread that fetches the tidbit and optional image."""
+        tidbit_ready = Signal(str)
+        image_ready = Signal(bytes, str)        # image_bytes, image_prompt
+        fetch_done = Signal(str, str, str, str)  # date_str, age_group, image_prompt, note
+
+        def __init__(self, date_str, prompt_text, prefer, exclude, age_group,
+                     bypass_cache, parent=None):
+            super().__init__(parent)
+            self.date_str = date_str
+            self.prompt_text = prompt_text
+            self.prefer = prefer
+            self.exclude = exclude
+            self.age_group = age_group
+            self.bypass_cache = bypass_cache
+
+        def run(self):
+            """Fetch tidbit (and image) then emit signals back to the main thread."""
+            cache_key = (self.date_str, self.age_group)
+            if not self.bypass_cache and cache_key in _fetch_cache:
+                entry = _fetch_cache[cache_key]
+                self.tidbit_ready.emit(entry["tidbit"])
+                if entry["image_bytes"]:
+                    self.image_ready.emit(entry["image_bytes"], entry["image_prompt"])
+                self.fetch_done.emit(self.date_str, self.age_group,
+                                     entry["image_prompt"], "(cached)")
+                return
+
+            tidbit = get_random_tidbit(
+                self.date_str, self.prompt_text,
+                self.prefer, self.exclude, self.age_group)
+            self.tidbit_ready.emit(tidbit)
+
+            image_bytes = b""
+            image_prompt = ""
+            note = ""
+            if SHOW_IMAGE:
+                image_bytes_raw, image_prompt = get_tidbit_image(
+                    tidbit, age_group=self.age_group)
+                image_bytes = image_bytes_raw or b""
+                if image_bytes:
+                    self.image_ready.emit(image_bytes, image_prompt)
+                else:
+                    note = "image unavailable"
+
+            _fetch_cache[cache_key] = {
+                "tidbit": tidbit,
+                "image_bytes": image_bytes,
+                "image_prompt": image_prompt,
+            }
+            self.fetch_done.emit(self.date_str, self.age_group, image_prompt, note)
+
+    _worker = [None]  # keeps reference so GC doesn't collect the running thread
+
+    def _on_tidbit(tidbit):
+        """Slot: update result pane when tidbit arrives."""
         result_text.setPlainText(tidbit)
 
-    fetch_button.clicked.connect(on_fetch)
+    def _on_image(image_bytes, image_prompt):
+        """Slot: decode and display image when it arrives."""
+        pixmap = QPixmap()
+        pixmap.loadFromData(image_bytes)
+        if not pixmap.isNull():
+            _raw_pixmap[0] = pixmap
+            _rescale_image_label()
+            image_label.setText("")
+            # Show caption only if image came from Wikipedia (prompt prefix used as hint)
+            image_caption.setText("")
+        else:
+            image_label.setText("Image decode\nfailed.")
+            image_caption.setText(image_prompt[:120] if image_prompt else "")
+
+    def _on_fetch_done(date_str, age_group, image_prompt, note):
+        """Slot: called when the worker finishes; updates debug pane."""
+        tidbit = result_text.toPlainText()
+        _set_debug_info(date_str, tidbit, image_prompt, age_group, extra=note)
+        fetch_button.setEnabled(True)
+
+    def _on_image_unavailable():
+        """Slot: show placeholder text when no image was returned."""
+        if _raw_pixmap[0] is None:
+            image_label.setText("No image.")
+            # Retrieve prompt from debug pane as fallback display
+            cached_prompt = ""
+            for line in debug_pane.toPlainText().splitlines():
+                if line.startswith("image_prompt:"):
+                    cached_prompt = line[len("image_prompt:"):].strip()
+                    break
+            image_caption.setText(cached_prompt[:160] if cached_prompt else "(image unavailable)")
+
+    def on_fetch(bypass_cache=True):
+        """Start a background worker to fetch tidbit and image for the current date."""
+        if _worker[0] and _worker[0].isRunning():
+            debug.trace(3, "on_fetch: previous fetch still in progress, skipping")
+            return
+        result_text.setPlainText("Fetching…")
+        image_label.setText("Generating image…")
+        image_label.setPixmap(QPixmap())
+        image_caption.setText("")
+        _raw_pixmap[0] = None
+        debug_pane.setPlainText("Fetching tidbit…")
+        fetch_button.setEnabled(False)
+
+        date_str = date_edit.date().toString("MMMM dd")
+        age_group = age_combo.currentText()
+        worker = _FetchWorker(
+            date_str, prompt_edit.text(),
+            prefer_edit.text(), exclude_edit.text(),
+            age_group, bypass_cache, parent=window)
+        worker.tidbit_ready.connect(_on_tidbit)
+        worker.image_ready.connect(_on_image)
+        worker.fetch_done.connect(_on_fetch_done)
+        # Show placeholder if image slot never fired
+        worker.fetch_done.connect(lambda *_: _on_image_unavailable())
+        _worker[0] = worker
+        worker.start()
+
+    fetch_button.clicked.connect(lambda: on_fetch(bypass_cache=True))
     quit_button.clicked.connect(app.quit)
+
+    # F5 shortcut to trigger fetch (natural keyboard shortcut for "refresh")
+    from PySide6.QtGui import QKeySequence, QShortcut
+    _f5 = QShortcut(QKeySequence("F5"), window)
+    _f5.activated.connect(lambda: on_fetch(bypass_cache=True))
 
     button_row = QHBoxLayout()
     button_row.addWidget(fetch_button)
     button_row.addWidget(quit_button)
 
+    # Content row: text card (2/3) + image card (1/3)
+    content_row = QHBoxLayout()
+    content_row.addWidget(result_card, 2)
+    content_row.addWidget(image_card, 1)
+
     layout = QVBoxLayout()
     layout.addLayout(form_layout)
     layout.addWidget(separator)
-    layout.addWidget(result_text, 1)
+    layout.addLayout(content_row, 1)
     layout.addLayout(button_row)
+    layout.addWidget(debug_pane)
     window.setLayout(layout)
 
     window.show()
@@ -248,8 +545,9 @@ def main():
     date_edit.lineEdit().deselect()
     fetch_button.setFocus()
     
-    # Trigger initial fetch after the event loop starts, ensuring window is visible
-    QTimer.singleShot(0, on_fetch)
+    # Trigger initial fetch after a short delay so the form is fully rendered first.
+    # bypass_cache=False: use cached result if available for same date+age_group.
+    QTimer.singleShot(300, lambda: on_fetch(bypass_cache=False))
     sys.exit(app.exec())
 
 #-------------------------------------------------------------------------------

@@ -17,6 +17,7 @@ Sample usage:
 """
 
 # Standard modules
+import base64
 from typing import Any, Dict, Optional, List
 
 # Installed modules
@@ -45,6 +46,12 @@ POE_URL = system.getenv_text(
 POE_TIMEOUT = system.getenv_float(
     "POE_TIMEOUT", 30,
     desc="Timeout for POE API call")
+POE_IMAGE_MODEL = system.getenv_text(
+    "POE_IMAGE_MODEL", "FLUX-schnell",
+    desc="Default model for POE image generation (e.g., FLUX-schnell, FLUX-pro)")
+POE_IMAGE_SIZE = system.getenv_text(
+    "POE_IMAGE_SIZE", "1024x1024",
+    desc="Default image size for POE image generation")
 
 
 class POEClient:
@@ -328,6 +335,151 @@ class POEClient:
         response = self.create_chat_completion(messages, model=model)
         debug.trace(5, f"extend() => {response}")
         return response
+
+
+    def generate_image_prompt(self, tidbit: str, model: Optional[str] = None,
+                              age_group: Optional[str] = None) -> str:
+        """
+        Convert a text tidbit into a visual image generation prompt via an LLM call.
+        Emphasizes concrete visual terms and applies NSFW-style filtering.
+
+        Args:
+            tidbit (str): The historical tidbit text to convert.
+            model (Optional[str]): The LLM model to use for prompt conversion.
+            age_group (Optional[str]): Target audience age group (e.g., "3-5", "18+").
+
+        Returns:
+            str: A safe, visually descriptive image generation prompt.
+        """
+        debug.trace_expr(6, tidbit, model, age_group, prefix="in generate_image_prompt: ")
+        if age_group and age_group != "18+":
+            age_clause = (
+                f"The image must be strictly appropriate for ages {age_group}: "
+                "no violence, no romance, no adult themes, only child-friendly imagery. "
+            )
+        else:
+            age_clause = ""
+        context = (
+            "You are a visual prompt specialist for image generation. "
+            "Convert the given historical tidbit into a concise image generation prompt "
+            "(under 100 words) that emphasizes concrete visual elements: setting, objects, "
+            "clothing, colors, lighting, and artistic style. "
+            f"{age_clause}"
+            "The result must be safe for work and family-friendly. "
+            "Strictly avoid any adult content, graphic violence, disturbing imagery, or NSFW material. "
+            "Output only the prompt text, with no preamble or explanation."
+        )
+        result = self.ask(
+            question=f"Convert this historical tidbit into a visual image prompt:\n\n{tidbit}",
+            model=model,
+            context=context,
+            temperature=0.5,
+            max_tokens=120,
+        )
+        debug.trace(5, f"generate_image_prompt() => {result!r}")
+        return result
+
+    def generate_image(self, prompt: str, model: Optional[str] = None,
+                       size: Optional[str] = None, n: int = 1) -> Optional[bytes]:
+        """
+        Generate an image using POE's image generation API.
+
+        Args:
+            prompt (str): The image generation prompt.
+            model (Optional[str]): The image model to use (defaults to POE_IMAGE_MODEL).
+            size (Optional[str]): Image dimensions, e.g. "1024x1024".
+            n (int): Number of images to generate.
+
+        Returns:
+            Optional[bytes]: Raw image bytes, or None on failure.
+        """
+        debug.trace_expr(5, prompt, model, size, n, prefix="in generate_image: ")
+        if model is None:
+            model = POE_IMAGE_MODEL
+        if size is None:
+            size = POE_IMAGE_SIZE
+
+        payload: Dict[str, Any] = {
+            "model": model,
+            "prompt": prompt,
+            "n": n,
+            "size": size,
+        }
+
+        image_bytes = None
+        try:
+            response = self._send_request("images/generations", payload)
+            debug.trace(6, f"generate_image raw response: {response}")
+            data_list = response.get("data", [])
+            if not data_list:
+                debug.trace(3, "generate_image: empty data list in response")
+            else:
+                item = data_list[0]
+                # Support both URL-based and base64-encoded responses
+                if "url" in item:
+                    img_url = item["url"]
+                    debug.trace(5, f"generate_image: downloading from {img_url}")
+                    img_response = requests.get(img_url, timeout=self.timeout)
+                    img_response.raise_for_status()
+                    image_bytes = img_response.content
+                elif "b64_json" in item:
+                    image_bytes = base64.b64decode(item["b64_json"])
+                else:
+                    debug.trace(3, f"generate_image: unrecognized item format: {item}")
+        except Exception:
+            system.print_exception_info("generate_image")
+        # Fallback: try accessing the image model via the chat completions endpoint.
+        # POE image bots (e.g. FLUX-schnell) are callable this way even when the
+        # dedicated /images/generations endpoint is not enabled for the account.
+        if not image_bytes:
+            debug.trace(3, "generate_image: /images/generations unavailable; trying chat fallback")
+            image_bytes = self._generate_image_via_chat(prompt, model=model)
+        debug.trace(5, f"generate_image() => {len(image_bytes) if image_bytes else 0} bytes")
+        return image_bytes
+
+    def _generate_image_via_chat(self, prompt: str, model: Optional[str] = None) -> Optional[bytes]:
+        """Call an image-generation model through the chat completions endpoint.
+        POE image bots return the generated image as a URL or base64 data embedded in
+        the assistant message content (often as markdown `![](url)` or a bare URL).
+        MODEL: image generation model name (defaults to POE_IMAGE_MODEL).
+        """
+        import re as _re
+        if model is None:
+            model = POE_IMAGE_MODEL
+        debug.trace(5, f"_generate_image_via_chat: model={model!r} prompt={prompt!r}")
+        try:
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+            response = self._send_request("chat/completions", payload)
+            choices = response.get("choices", [])
+            if not choices:
+                debug.trace(3, "_generate_image_via_chat: no choices in response")
+                return None
+            content = choices[0].get("message", {}).get("content", "")
+            debug.trace(5, f"_generate_image_via_chat: content={content!r}")
+            # Try markdown image syntax: ![alt](url)
+            match = _re.search(r'!\[.*?\]\((https?://\S+?)\)', content)
+            if not match:
+                # Try bare image URL
+                match = _re.search(
+                    r'(https?://\S+\.(?:png|jpg|jpeg|webp|gif)\S*)',
+                    content, _re.IGNORECASE)
+            if match:
+                img_url = match.group(1).rstrip(")")
+                debug.trace(4, f"_generate_image_via_chat: downloading {img_url}")
+                dl = requests.get(img_url, timeout=self.timeout)
+                dl.raise_for_status()
+                return dl.content
+            # Try inline base64
+            b64_match = _re.search(r'data:image/\w+;base64,([A-Za-z0-9+/=]+)', content)
+            if b64_match:
+                return base64.b64decode(b64_match.group(1))
+            debug.trace(3, "_generate_image_via_chat: no image found in response content")
+        except Exception:
+            system.print_exception_info("_generate_image_via_chat")
+        return None
 
 
 def main():
