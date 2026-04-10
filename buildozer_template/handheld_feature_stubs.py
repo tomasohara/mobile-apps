@@ -348,6 +348,8 @@ class MultiTouchMapWidget(QWidget):
                 from PySide6.QtCore import QUrl
                 self.quick_widget = QQuickWidget()
                 self.quick_widget.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
+                # note: QtWebView apparently better than QWebEngineView for Android.
+                # See https://stackoverflow.com/questions/29055475/qwebview-or-qwebengineview
                 qml_code = '''
                 import QtQuick
                 import QtWebView
