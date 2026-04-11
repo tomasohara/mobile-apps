@@ -86,7 +86,7 @@ import unittest
 PACKAGE = "org.test.random_tidbit"      # package.domain + package.name from buildozer.spec
 MAIN_ACTIVITY = f"{PACKAGE}/org.kivy.android.PythonActivity"   # p4a/Qt activity class
 ADB = "adb"
-FETCH_WAIT_SECS = 45       # generous timeout for LLM + image generation
+FETCH_WAIT_SECS = 150      # generous timeout: FLUX-schnell image gen can take 60-120 s
 LOGCAT_TAG = "python"      # tag used by the PySide6/Python runtime on Android
 
 
