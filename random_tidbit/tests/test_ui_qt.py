@@ -316,6 +316,46 @@ class TestFetchAndCache(unittest.TestCase):
                          "Second write should overwrite the cached entry")
         debug.trace(4, "test_cache_read_and_write: passed")
 
+    def test_disk_cache_round_trip(self):
+        """_save_cache / _load_cache should persist and restore entries including image bytes.
+
+        Steps:
+          1. Populate _fetch_cache with a known entry (including non-trivial image bytes).
+          2. Call _save_cache() — writes tidbit_cache.json to the app directory.
+          3. Clear _fetch_cache.
+          4. Call _load_cache() — reloads from disk.
+          5. Assert the entry is present and image_bytes match exactly.
+          6. Clean up the cache file so other tests are not affected.
+        """
+        # pylint: disable=protected-access
+        import tempfile  # pylint: disable=import-outside-toplevel
+        key = ("April 01", "Kids")
+        fake_image = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32   # fake PNG header + padding
+        entry = {"tidbit": "Disk cache test tidbit", "image_bytes": fake_image,
+                 "image_prompt": "disk cache prompt"}
+        # Redirect cache file to a temp location so we don't pollute real cache
+        orig_path_fn = _main._cache_file_path
+        tmp = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
+        tmp.close()
+        try:
+            _main._cache_file_path = lambda: tmp.name   # monkey-patch for test
+            _main._fetch_cache[key] = entry
+            _main._save_cache()
+            _main._fetch_cache.clear()
+            self.assertNotIn(key, _main._fetch_cache, "Cache should be empty after clear")
+            _main._load_cache()
+            self.assertIn(key, _main._fetch_cache, "Entry should be present after load")
+            loaded = _main._fetch_cache[key]
+            self.assertEqual(loaded["tidbit"], "Disk cache test tidbit")
+            self.assertEqual(loaded["image_bytes"], fake_image,
+                             "image_bytes must survive save/load round-trip")
+            self.assertEqual(loaded["image_prompt"], "disk cache prompt")
+            debug.trace(4, "test_disk_cache_round_trip: passed")
+        finally:
+            _main._cache_file_path = orig_path_fn
+            _main._fetch_cache.clear()
+            pathlib.Path(tmp.name).unlink(missing_ok=True)
+
     @pytest.mark.xfail(reason="needs build_ui() refactor to expose widget dict")
     def test_fetch_button_disabled_during_fetch(self):
         """fetch_button.isEnabled() must be False immediately after on_fetch() starts.

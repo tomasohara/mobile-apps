@@ -17,9 +17,11 @@
 """Displays random historical tidbit"""
 
 # Standard packages
+import base64
 import datetime
 import glob
 import importlib.util
+import json
 import os
 import sys
 
@@ -69,7 +71,63 @@ SHOW_IMAGE = system.getenv_bool(
     skip_register=True)
 
 # Result cache: (date_str, age_group) -> {"tidbit", "image_bytes", "image_prompt"}
+# In-memory dict; write-through to disk via _save_cache() / loaded at startup via _load_cache().
 _fetch_cache = {}
+
+def _cache_file_path() -> str:
+    """Return the path to the on-disk JSON cache file.
+
+    Desktop: <app_dir>/tidbit_cache.json
+    Android: /data/data/<package>/files/tidbit_cache.json (same dir as main.pyc)
+    The directory is guaranteed writable on both platforms.
+    """
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(app_dir, "tidbit_cache.json")
+
+
+def _load_cache():
+    """Load the disk cache into _fetch_cache at startup (best-effort; silent on error)."""
+    path = _cache_file_path()
+    debug.trace(4, f"_load_cache: reading {path!r}")
+    try:
+        with open(path, encoding="utf-8") as f:
+            raw = json.load(f)
+        for key_str, entry in raw.items():
+            date_str, age_group = key_str.split("|", 1)
+            # image_bytes is stored as base64 string; decode back to bytes
+            img_b64 = entry.get("image_bytes", "")
+            entry["image_bytes"] = base64.b64decode(img_b64) if img_b64 else b""
+            _fetch_cache[(date_str, age_group)] = entry
+        debug.trace(3, f"_load_cache: loaded {len(_fetch_cache)} entries from {path!r}")
+    except FileNotFoundError:
+        debug.trace(4, "_load_cache: no cache file yet")
+    except Exception:                    # pylint: disable=broad-exception-caught
+        system.print_exception_info("_load_cache")
+
+
+def _save_cache():
+    """Persist _fetch_cache to disk (best-effort; silent on error)."""
+    path = _cache_file_path()
+    debug.trace(4, f"_save_cache: writing {len(_fetch_cache)} entries to {path!r}")
+    try:
+        raw = {}
+        for (date_str, age_group), entry in _fetch_cache.items():
+            key_str = f"{date_str}|{age_group}"
+            img_bytes = entry.get("image_bytes") or b""
+            raw[key_str] = {
+                "tidbit": entry.get("tidbit", ""),
+                "image_bytes": base64.b64encode(img_bytes).decode("ascii"),
+                "image_prompt": entry.get("image_prompt", ""),
+            }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(raw, f, indent=2)
+        debug.trace(3, f"_save_cache: saved {len(raw)} entries")
+    except Exception:                    # pylint: disable=broad-exception-caught
+        system.print_exception_info("_save_cache")
+
+
+# Load any previously saved results immediately at module import time
+_load_cache()
 
 def _load_local_poe_client():
     """Load the local poe_client ensuring the correct (non-mezcla) version is used.
@@ -493,6 +551,7 @@ def main():
                 "image_bytes": image_bytes,
                 "image_prompt": image_prompt,
             }
+            _save_cache()
             self.fetch_done.emit(self.date_str, self.age_group, image_prompt, note)
 
     _worker = [None]  # keeps reference so GC doesn't collect the running thread
