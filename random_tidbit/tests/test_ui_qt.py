@@ -53,8 +53,12 @@
 """Qt UI tests for random_tidbit/main.py"""
 
 import os
-import sys
+import pathlib
+import py_compile
 import struct
+import sys
+import tempfile
+import types
 import unittest
 import zlib
 import pytest
@@ -62,11 +66,13 @@ import pytest
 # Must be set before any PySide6 import
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication, QComboBox
 
 from mezcla import debug
+
+# main is imported after the QPA env var is set (PySide6 is safe to import now)
+import main as _main  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -82,11 +88,9 @@ def qt_app():
 @pytest.fixture(autouse=True)
 def fresh_main():
     """Clear module-level mutable state in main between tests."""
-    # Import lazily so QApplication can be set up first
-    import main as _main
-    _main._fetch_cache.clear()
+    _main._fetch_cache.clear()   # pylint: disable=protected-access
     yield
-    _main._fetch_cache.clear()
+    _main._fetch_cache.clear()   # pylint: disable=protected-access
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +142,6 @@ class TestLayoutProportions(unittest.TestCase):
         and image_card pass stretch factors 2 and 1 respectively.  Fragile but
         works without the build_ui() refactor.
         """
-        import pathlib
         src = pathlib.Path(__file__).parent.parent / "main.py"
         text = src.read_text()
         # We expect lines like:  content_row.addWidget(result_card, 2)
@@ -270,7 +273,7 @@ class TestFetchAndCache(unittest.TestCase):
         The autouse fresh_main fixture clears it before each test, so this
         also verifies that the fixture is working correctly.
         """
-        import main as _main
+        # pylint: disable=protected-access
         self.assertTrue(
             isinstance(_main._fetch_cache, dict),
             "_fetch_cache must be a dict")
@@ -284,6 +287,34 @@ class TestFetchAndCache(unittest.TestCase):
             _main._fetch_cache[("April 01", "18+")]["tidbit"] == "sentinel",
             "Cache must be indexable by (date_str, age_group) tuple")
         debug.trace(4, "test_fetch_cache_starts_empty: passed")
+
+    def test_cache_read_and_write(self):
+        """Writing a cache entry and reading it back should return the same data.
+
+        This validates the full round-trip used by _FetchWorker / on_fetch():
+          1. Check (_date, _age) in _fetch_cache  → False initially
+          2. Store result dict                     → entry created
+          3. Read entry back                        → same tidbit/image_prompt
+          4. Second write (bypass) overwrites       → new value visible
+        This test does NOT touch the network or the POE API.
+        """
+        # pylint: disable=protected-access
+        key = ("April 01", "18+")
+        # 1. Cache is empty at start (fresh_main fixture guarantees this)
+        self.assertNotIn(key, _main._fetch_cache, "Cache should be empty initially")
+        # 2. Write entry
+        entry = {"tidbit": "April Fools!", "image_bytes": b"\x89PNG", "image_prompt": "jesters"}
+        _main._fetch_cache[key] = entry
+        # 3. Read back
+        self.assertIn(key, _main._fetch_cache, "Entry should be present after write")
+        self.assertEqual(_main._fetch_cache[key]["tidbit"], "April Fools!")
+        self.assertEqual(_main._fetch_cache[key]["image_prompt"], "jesters")
+        # 4. Overwrite (simulates bypass_cache=True on second fetch)
+        entry2 = {"tidbit": "Updated!", "image_bytes": b"", "image_prompt": "new prompt"}
+        _main._fetch_cache[key] = entry2
+        self.assertEqual(_main._fetch_cache[key]["tidbit"], "Updated!",
+                         "Second write should overwrite the cached entry")
+        debug.trace(4, "test_cache_read_and_write: passed")
 
     @pytest.mark.xfail(reason="needs build_ui() refactor to expose widget dict")
     def test_fetch_button_disabled_during_fetch(self):
@@ -325,6 +356,132 @@ class TestFetchAndCache(unittest.TestCase):
         once, indicating a fresh API call was made despite the cache entry.
         """
         assert False, "todo: implement (needs build_ui() refactor)"
+
+
+# ===========================================================================
+# Category 3b: _load_local_poe_client() loader correctness
+# ===========================================================================
+#
+# Goal: verify that _load_local_poe_client() always returns a module with the
+# POEClient attribute (i.e., OUR poe_client, not mezcla's), that successive
+# calls return the same cached module object, and that stale cache entries
+# (missing POEClient) are not returned.
+#
+# *** GOTCHAS ***
+#
+# (F) .pyc-only environments (Android)
+#   On Android, buildozer deploys poe_client.pyc directly in the app dir.
+#   Python 3's import_module() cannot find a bare .pyc in a directory — it
+#   expects either a .py source or __pycache__/module.cpython-3XX.pyc layout.
+#   The fix is to use spec_from_file_location with the explicit .pyc path,
+#   which importlib supports for both .py and .pyc files.
+#   Testing this on desktop requires creating a temp directory with only a
+#   .pyc file and temporarily adjusting __file__ (complex); the test below
+#   verifies the desktop (.py) path and documents the Android (.pyc) path
+#   with an xfail stub that can be enabled once the build environment is
+#   set up for .pyc-only testing.
+#
+# (G) sys.modules cache poisoning
+#   A previous version of _load_local_poe_client() registered the module in
+#   sys.modules BEFORE exec_module() ran.  If exec_module() raised
+#   (e.g., FileNotFoundError), the broken empty module stayed cached.  All
+#   subsequent calls returned the broken module, producing
+#   "module has no attribute 'POEClient'".
+#   The current code registers only AFTER success and validates the cached
+#   entry with hasattr(cached, 'POEClient') before returning it.
+
+class TestLoadLocalPoeClient(unittest.TestCase):
+    """Category 3b: _load_local_poe_client() returns correct module and caches it"""
+
+    def test_returns_module_with_poe_client(self):
+        """_load_local_poe_client() must return a module that has the POEClient class.
+
+        This is the most basic correctness check: the returned module should be
+        OUR local poe_client.py (not mezcla's upstream version), which has the
+        generate_image_prompt() and generate_image() methods added for this app.
+        Verified by checking hasattr(mod, 'POEClient').
+        """
+        # Clear any cached entry to force a fresh load
+        sys.modules.pop("_local_poe_client", None)
+        mod = _main._load_local_poe_client()   # pylint: disable=protected-access
+        self.assertTrue(
+            hasattr(mod, "POEClient"),
+            "_load_local_poe_client() must return a module with POEClient class")
+        self.assertTrue(
+            hasattr(mod.POEClient, "generate_image_prompt"),
+            "POEClient must have generate_image_prompt() method (from local poe_client.py)")
+        self.assertTrue(
+            hasattr(mod.POEClient, "generate_image"),
+            "POEClient must have generate_image() method (from local poe_client.py)")
+        debug.trace(4, "test_returns_module_with_poe_client: passed")
+
+    def test_returns_cached_module_on_second_call(self):
+        """Successive calls to _load_local_poe_client() must return the same module object.
+
+        The function registers the loaded module in sys.modules['_local_poe_client']
+        and returns the cached copy on subsequent calls.  This test verifies that
+        the caching logic works: both calls return the same object (is identity).
+        Gotcha G: if a stale broken entry is cached, the second call will still
+        return it — this test verifies that the module returned is always valid.
+        """
+        sys.modules.pop("_local_poe_client", None)
+        mod1 = _main._load_local_poe_client()   # pylint: disable=protected-access
+        mod2 = _main._load_local_poe_client()   # pylint: disable=protected-access
+        self.assertIs(mod1, mod2,
+                      "Second call must return the same cached module object")
+        debug.trace(4, "test_returns_cached_module_on_second_call: passed")
+
+    def test_stale_cache_entry_is_rejected(self):
+        """A cached entry in sys.modules without POEClient must be replaced.
+
+        Simulates the cache-poisoning scenario (gotcha G): a broken module
+        object (no POEClient attribute) is put in sys.modules['_local_poe_client'],
+        then _load_local_poe_client() is called.  It must detect the bad entry,
+        pop it, load afresh, and return a valid module.
+        """
+        # Inject a stale/broken module (no POEClient attribute)
+        broken = types.ModuleType("_local_poe_client")
+        sys.modules["_local_poe_client"] = broken
+        # _load_local_poe_client should detect hasattr fails and reload
+        mod = _main._load_local_poe_client()    # pylint: disable=protected-access
+        self.assertTrue(
+            hasattr(mod, "POEClient"),
+            "Must reject stale cache entry and return freshly loaded module")
+        self.assertIsNot(mod, broken,
+                         "Returned module must not be the stale broken module")
+        debug.trace(4, "test_stale_cache_entry_is_rejected: passed")
+
+    def test_loads_from_pyc_when_py_absent(self):
+        """_load_local_poe_client() must load from poe_client.pyc when .py is absent.
+
+        This is the Android scenario: only .pyc files are deployed.
+        Gotcha F: Python 3 import_module() cannot find a bare .pyc in a directory.
+        The old fallback `importlib.import_module('poe_client')` failed with
+        'No module named poe_client' because of this exact limitation.
+        The new code uses spec_from_file_location with the explicit .pyc path.
+
+        Also verified by buildozer.spec: poe_client.py must NOT appear in
+        source.exclude_patterns (it was accidentally excluded in an earlier version,
+        which caused this test to be written).
+        """
+        # Compile poe_client.py → a temp dir containing only the .pyc
+        src_py = pathlib.Path(__file__).parent.parent / "poe_client.py"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Compile to __pycache__ first (py_compile default), then copy bare
+            compiled = py_compile.compile(str(src_py), cfile=os.path.join(tmpdir, "poe_client.pyc"),
+                                          doraise=True)
+            # Temporarily redirect _main.__file__ so _load_local_poe_client looks in tmpdir
+            original_file = _main.__file__
+            sys.modules.pop("_local_poe_client", None)
+            try:
+                _main.__file__ = os.path.join(tmpdir, "main.pyc")  # fake Android entrypoint
+                mod = _main._load_local_poe_client()               # pylint: disable=protected-access
+            finally:
+                _main.__file__ = original_file
+                sys.modules.pop("_local_poe_client", None)
+            self.assertTrue(hasattr(mod, "POEClient"),
+                            f"Must load POEClient from .pyc at {compiled}")
+            debug.trace(4, "test_loads_from_pyc_when_py_absent: passed")
 
 
 # ===========================================================================

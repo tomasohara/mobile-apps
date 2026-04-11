@@ -18,10 +18,21 @@ Sample usage:
 
 # Standard modules
 import base64
+import io
+import re
 from typing import Any, Dict, Optional, List
 
 # Installed modules
 import requests
+
+# PIL/Pillow is optional — used for image format conversion on Android
+# (Qt on p4a may lack JPEG/WebP plugins; PNG always works)
+try:
+    from PIL import Image as _PILImage
+    _PIL_AVAILABLE = True
+except ImportError:
+    _PILImage = None
+    _PIL_AVAILABLE = False
 
 # Local modules
 # TODO: def mezcla_import(name): ... components = eval(name).split(); ... import nameN-1.nameN as nameN
@@ -29,6 +40,34 @@ from mezcla import debug
 from mezcla import glue_helpers as gh
 from mezcla.main import Main
 from mezcla import system
+
+
+def _to_png_bytes(img_data: bytes) -> bytes:
+    """Convert IMG_DATA to PNG format using PIL if available; otherwise return as-is.
+
+    Qt on Android (p4a/PySide6) may lack JPEG/WebP image plugins, causing
+    QPixmap.loadFromData() to fail.  PNG is always supported.  This function
+    detects non-PNG input and re-encodes to PNG in-process so the caller can
+    pass the result directly to loadFromData().
+    """
+    # PNG magic bytes: \x89PNG
+    if img_data[:4] == b'\x89PNG':
+        return img_data          # already PNG — no conversion needed
+    if not _PIL_AVAILABLE:
+        debug.trace(3, "_to_png_bytes: PIL not available; returning raw bytes as-is")
+        return img_data
+    try:
+        buf = io.BytesIO(img_data)
+        pil_img = _PILImage.open(buf)
+        out = io.BytesIO()
+        pil_img.save(out, format="PNG")
+        png_data = out.getvalue()
+        debug.trace(3, f"_to_png_bytes: converted {len(img_data)} bytes "
+                    f"({pil_img.format}) → {len(png_data)} bytes PNG")
+        return png_data
+    except Exception:            # pylint: disable=broad-exception-caught
+        system.print_exception_info("_to_png_bytes")
+        return img_data
 
 
 # Environment options
@@ -426,7 +465,7 @@ class POEClient:
                     image_bytes = base64.b64decode(item["b64_json"])
                 else:
                     debug.trace(3, f"generate_image: unrecognized item format: {item}")
-        except Exception:
+        except Exception:             # pylint: disable=broad-exception-caught
             system.print_exception_info("generate_image")
         # Fallback: try accessing the image model via the chat completions endpoint.
         # POE image bots (e.g. FLUX-schnell) are callable this way even when the
@@ -443,7 +482,6 @@ class POEClient:
         the assistant message content (often as markdown `![](url)` or a bare URL).
         MODEL: image generation model name (defaults to POE_IMAGE_MODEL).
         """
-        import re as _re
         if model is None:
             model = POE_IMAGE_MODEL
         debug.trace(5, f"_generate_image_via_chat: model={model!r} prompt={prompt!r}")
@@ -460,24 +498,29 @@ class POEClient:
             content = choices[0].get("message", {}).get("content", "")
             debug.trace(5, f"_generate_image_via_chat: content={content!r}")
             # Try markdown image syntax: ![alt](url)
-            match = _re.search(r'!\[.*?\]\((https?://\S+?)\)', content)
+            match = re.search(r'!\[.*?\]\((https?://\S+?)\)', content)
             if not match:
                 # Try bare image URL
-                match = _re.search(
+                match = re.search(
                     r'(https?://\S+\.(?:png|jpg|jpeg|webp|gif)\S*)',
-                    content, _re.IGNORECASE)
+                    content, re.IGNORECASE)
             if match:
                 img_url = match.group(1).rstrip(")")
                 debug.trace(4, f"_generate_image_via_chat: downloading {img_url}")
                 dl = requests.get(img_url, timeout=self.timeout)
                 dl.raise_for_status()
-                return dl.content
+                content_type = dl.headers.get("content-type", "unknown")
+                img_data = dl.content
+                debug.trace(3, f"_generate_image_via_chat: downloaded {len(img_data)} bytes "
+                            f"content-type={content_type!r} magic={img_data[:8]!r}")
+                img_data = _to_png_bytes(img_data)
+                return img_data
             # Try inline base64
-            b64_match = _re.search(r'data:image/\w+;base64,([A-Za-z0-9+/=]+)', content)
+            b64_match = re.search(r'data:image/\w+;base64,([A-Za-z0-9+/=]+)', content)
             if b64_match:
                 return base64.b64decode(b64_match.group(1))
             debug.trace(3, "_generate_image_via_chat: no image found in response content")
-        except Exception:
+        except Exception:             # pylint: disable=broad-exception-caught
             system.print_exception_info("_generate_image_via_chat")
         return None
 

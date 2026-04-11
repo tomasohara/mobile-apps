@@ -37,7 +37,7 @@ def patch_build_py(build_py):
                 f.write(content)
             return "patched"
             
-    except Exception as e:
+    except Exception as e:     # pylint: disable=broad-exception-caught
         logger.error("p4a_hook error: Failed to read/write %s: %s", build_py, e)
     
     return "not_found"

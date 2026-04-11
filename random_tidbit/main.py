@@ -18,12 +18,14 @@
 
 # Standard packages
 import datetime
+import glob
+import importlib.util
 import os
 import sys
 
 # Installed packages
 from PySide6.QtCore import QDate, QEvent, QObject, Qt, QThread, QTimer
-from PySide6.QtGui import QFont, QPixmap, QTextCharFormat
+from PySide6.QtGui import QFont, QKeySequence, QPixmap, QShortcut, QTextCharFormat
 from PySide6.QtWidgets import (
     QApplication, QCalendarWidget, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
     QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit,
@@ -70,21 +72,64 @@ SHOW_IMAGE = system.getenv_bool(
 _fetch_cache = {}
 
 def _load_local_poe_client():
-    """Load the local poe_client.py by absolute path so the mezcla version is never used.
-    Returns the module object (with generate_image_prompt / generate_image).
+    """Load the local poe_client ensuring the correct (non-mezcla) version is used.
+
+    Desktop: loads poe_client.py by absolute path so the mezcla poe_client is never
+    accidentally imported instead.
+    Android: buildozer/p4a compiles .py → .pyc and deploys only the .pyc (no source).
+    Python 3 will NOT find a bare poe_client.pyc in a directory via import_module() —
+    it expects either a .py source or __pycache__/module.cpython-3XX.pyc layout.
+    We therefore look for poe_client.pyc next to main.pyc and load it explicitly via
+    spec_from_file_location, which accepts both .py and .pyc paths.
+
+    Key correctness rules:
+      - Only register in sys.modules AFTER exec_module succeeds (never before).
+      - Validate any cached entry before returning it (hasattr POEClient guard).
+      - Pop stale/broken cache entries so retry attempts can succeed.
     """
-    import importlib.util
-    import sys as _sys
-    cached = _sys.modules.get("_local_poe_client")
-    if cached is not None:
+    # Return cached module only if it was fully initialized
+    cached = sys.modules.get("_local_poe_client")
+    if cached is not None and hasattr(cached, "POEClient"):
         return cached
-    _poc_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "poe_client.py")
-    _spec = importlib.util.spec_from_file_location("_local_poe_client", _poc_path)
-    _mod = importlib.util.module_from_spec(_spec)
-    # Register under private name so 'import poe_client' still works normally
-    _sys.modules["_local_poe_client"] = _mod
-    _spec.loader.exec_module(_mod)
-    return _mod
+    # Remove any stale/broken entry left by a previous failed load attempt
+    sys.modules.pop("_local_poe_client", None)
+
+    _app_dir = os.path.dirname(os.path.abspath(__file__))
+
+    def _load_by_path(path):
+        """Load module from path (works for both .py and .pyc)."""
+        debug.trace(5, f"_load_local_poe_client: loading from {path!r}")
+        _spec = importlib.util.spec_from_file_location("_local_poe_client", path)
+        _m = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_m)
+        sys.modules["_local_poe_client"] = _m
+        return _m
+
+    # 1. Desktop path: poe_client.py next to main.py
+    _poc_py = os.path.join(_app_dir, "poe_client.py")
+    if os.path.exists(_poc_py):
+        return _load_by_path(_poc_py)
+
+    # 2. Android path: buildozer deploys poe_client.pyc directly in the app dir
+    #    (same directory as main.pyc).  Python 3 import_module() cannot find a
+    #    bare .pyc in a directory, so we locate and load it explicitly.
+    _poc_pyc = os.path.join(_app_dir, "poe_client.pyc")
+    debug.trace(4, f"_load_local_poe_client: .py not found; trying {_poc_pyc!r} "
+                f"(exists={os.path.exists(_poc_pyc)})")
+    if os.path.exists(_poc_pyc):
+        return _load_by_path(_poc_pyc)
+
+    # 3. Last-resort: search __pycache__ for any cpython .pyc variant
+    _cache_pattern = os.path.join(_app_dir, "__pycache__", "poe_client.cpython-*.pyc")
+    _candidates = sorted(glob.glob(_cache_pattern))
+    debug.trace(4, f"_load_local_poe_client: __pycache__ candidates={_candidates!r}")
+    if _candidates:
+        return _load_by_path(_candidates[-1])
+
+    raise ImportError(
+        f"Cannot find poe_client.py or poe_client.pyc in {_app_dir!r}; "
+        f"checked: {_poc_py!r}, {_poc_pyc!r}, {_cache_pattern!r}"
+    )
 
 
 def get_random_tidbit(date_str=None, prompt_override=None,
@@ -117,8 +162,9 @@ def get_random_tidbit(date_str=None, prompt_override=None,
         poc = _load_local_poe_client()
         client = poc.POEClient(api_key=POE_API, model=POE_MODEL)
         result = client.ask(question)
-    except Exception as exc:
-        result = f"Unable to fetch tidbit for {date_str}: {exc}"
+    except Exception as exc:      # pylint: disable=broad-exception-caught
+        result = f"Error: Unable to fetch tidbit for {date_str}: {exc}"
+    debug.trace(5, f"get_random_tidbit() => {result!r}")
     return result
 
 def get_tidbit_image(tidbit, image_model=None, age_group=None):
@@ -136,7 +182,7 @@ def get_tidbit_image(tidbit, image_model=None, age_group=None):
         image_prompt = client.generate_image_prompt(tidbit, age_group=age_group)
         debug.trace(4, f"get_tidbit_image: image_prompt={image_prompt!r}")
         image_bytes = client.generate_image(image_prompt, model=image_model or POE_IMAGE_MODEL)
-    except Exception as exc:
+    except Exception as exc:      # pylint: disable=broad-exception-caught
         debug.trace(3, f"get_tidbit_image: failed: {exc}")
         image_prompt = image_prompt or f"(error: {exc})"
     return image_bytes, image_prompt
@@ -457,8 +503,11 @@ def main():
 
     def _on_image(image_bytes, image_prompt):
         """Slot: decode and display image when it arrives."""
+        magic = image_bytes[:8] if image_bytes else b""
+        debug.trace(3, f"_on_image: received {len(image_bytes)} bytes magic={magic!r}")
         pixmap = QPixmap()
-        pixmap.loadFromData(image_bytes)
+        ok = pixmap.loadFromData(image_bytes)
+        debug.trace(3, f"_on_image: loadFromData ok={ok} isNull={pixmap.isNull()}")
         if not pixmap.isNull():
             _raw_pixmap[0] = pixmap
             _rescale_image_label()
@@ -518,7 +567,6 @@ def main():
     quit_button.clicked.connect(app.quit)
 
     # F5 shortcut to trigger fetch (natural keyboard shortcut for "refresh")
-    from PySide6.QtGui import QKeySequence, QShortcut
     _f5 = QShortcut(QKeySequence("F5"), window)
     _f5.activated.connect(lambda: on_fetch(bypass_cache=True))
 
