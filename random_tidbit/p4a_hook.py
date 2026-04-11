@@ -8,21 +8,38 @@ import logging
 
 def patch_build_py(build_py):
     """
-    Patch build.py to append PYTHONUTF8=1 to p4a_env_vars.txt.
-    This prevents the Python 3.11+ filesystem encoding crash on Android
-    without needing to recompile start.c via ndk-build.
+    Patch build.py to append runtime env vars to p4a's generated .p4a_env_vars.
+
+    We force:
+      - PYTHONUTF8=1 so Python 3.11+ avoids the filesystem encoding crash.
+      - DEBUG_LEVEL=6 so Android logcat includes the level-5 traces used by
+        the image-generation diagnostics tests.
+      - PYTHONOPTIMIZE=0 so runtime debug behaviour matches the checked-in
+        p4a_env_vars.txt expectations.
     """
     logger = logging.getLogger('p4a.hook')
 
     target_code = 'f.write("P4A_MINSDK=" + str(args.min_sdk_version) + "\\n")'
-    
-    patch_code = """
+
+    ## OLD:
+    ## patch_code = """
+    ##     # Force Python 3.11+ to use UTF-8 filesystem encoding
+    ##     f.write("PYTHONUTF8=1\\n")
+    ## """
+    old_patch_code = """
         # Force Python 3.11+ to use UTF-8 filesystem encoding
         f.write("PYTHONUTF8=1\\n")
 """
-    
+    patch_code = """
+        # Force Android runtime env expected by random_tidbit
+        f.write("PYTHONUTF8=1\\n")
+        f.write("DEBUG_LEVEL=6\\n")
+        f.write("PYTHONOPTIMIZE=0\\n")
+"""
+
     full_target = target_code
     full_replacement = target_code + patch_code
+    old_replacement = target_code + old_patch_code
 
     try:
         with open(build_py, 'r', encoding="utf-8") as f:
@@ -30,6 +47,12 @@ def patch_build_py(build_py):
 
         if full_replacement in content:
             return "already_patched"
+
+        if old_replacement in content:
+            content = content.replace(old_replacement, full_replacement)
+            with open(build_py, 'w', encoding="utf-8") as f:
+                f.write(content)
+            return "patched"
 
         if full_target in content:
             content = content.replace(full_target, full_replacement)

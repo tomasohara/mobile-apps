@@ -63,6 +63,7 @@
 
 ## OLD: import os
 import pathlib
+import re
 import subprocess
 ## OLD: import sys
 import time
@@ -88,6 +89,7 @@ MAIN_ACTIVITY = f"{PACKAGE}/org.kivy.android.PythonActivity"   # p4a/Qt activity
 ADB = "adb"
 FETCH_WAIT_SECS = 150      # generous timeout: FLUX-schnell image gen can take 60-120 s
 LOGCAT_TAG = "python"      # tag used by the PySide6/Python runtime on Android
+MIN_ANDROID_DEBUG_LEVEL = 5   # required for the image-generation trace markers
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +165,12 @@ def _poll_logcat_for(marker: str, timeout: float = FETCH_WAIT_SECS,
         time.sleep(poll_interval)
     debug.trace(3, f"_poll_logcat_for: timed out after {timeout}s waiting for {marker!r}")
     return False
+
+
+def _extract_debug_level_from_text(text: str):
+    """Extract DEBUG_LEVEL from shell-style KEY=VALUE text, or None if absent."""
+    match = re.search(r"^DEBUG_LEVEL=(\d+)$", text, re.MULTILINE)
+    return int(match.group(1)) if match else None
 
 
 def _get_screen_bounds_from_uiautomator() -> tuple:
@@ -260,6 +268,33 @@ class TestToolingAndDevice(unittest.TestCase):
                 return
         # No exclude_patterns line found — that's fine (means nothing is excluded)
         debug.trace(4, "test_poe_client_not_excluded_from_build: no source.exclude_patterns line found")
+
+    def test_android_debug_level_is_high_enough(self):
+        """Android packaging config must keep DEBUG_LEVEL high enough for diagnostics.
+
+        The image-pane tests rely on level-5 log markers such as:
+            'generate_image() => ...'
+        Guard both packaging paths:
+          1. checked-in p4a_env_vars.txt copied into the APK assets
+          2. p4a_hook.py patch that injects DEBUG_LEVEL into the generated
+             .p4a_env_vars file used by python-for-android at startup
+        """
+        app_dir = pathlib.Path(__file__).parent.parent
+        env_text = (app_dir / "p4a_env_vars.txt").read_text()
+        debug_level = _extract_debug_level_from_text(env_text)
+        self.assertIsNotNone(
+            debug_level,
+            "p4a_env_vars.txt must define DEBUG_LEVEL for Android builds")
+        self.assertGreaterEqual(
+            debug_level, MIN_ANDROID_DEBUG_LEVEL,
+            f"Android DEBUG_LEVEL in p4a_env_vars.txt must be >= {MIN_ANDROID_DEBUG_LEVEL}; "
+            f"saw {debug_level}")
+
+        hook_text = (app_dir / "p4a_hook.py").read_text()
+        self.assertTrue(
+            'f.write("DEBUG_LEVEL=6\\\\n")' in hook_text,
+            "p4a_hook.py must inject DEBUG_LEVEL=6 into generated .p4a_env_vars "
+            "so stale/generated env files cannot hide level-5 log markers")
 
     @requires_device
     @pytest.mark.xfail(reason="Package name in PACKAGE constant may not match installed APK")
