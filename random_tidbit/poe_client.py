@@ -419,7 +419,8 @@ class POEClient:
         return result
 
     def generate_image(self, prompt: str, model: Optional[str] = None,
-                       size: Optional[str] = None, n: int = 1) -> Optional[bytes]:
+                       size: Optional[str] = None, n: int = 1,
+                       check_imggen: bool = False) -> Optional[bytes]:
         """
         Generate an image using POE's image generation API.
 
@@ -428,6 +429,10 @@ class POEClient:
             model (Optional[str]): The image model to use (defaults to POE_IMAGE_MODEL).
             size (Optional[str]): Image dimensions, e.g. "1024x1024".
             n (int): Number of images to generate.
+            check_imggen (bool): If True, first try the /images/generations endpoint
+                before falling back to the chat-completions path.  Defaults to False
+                because the endpoint returns 403 for most accounts and pinging it
+                unnecessarily may flag the account for unusual activity.
 
         Returns:
             Optional[bytes]: Raw image bytes, or None on failure.
@@ -438,35 +443,37 @@ class POEClient:
         if size is None:
             size = POE_IMAGE_SIZE
 
-        payload: Dict[str, Any] = {
-            "model": model,
-            "prompt": prompt,
-            "n": n,
-            "size": size,
-        }
-
         image_bytes = None
-        try:
-            response = self._send_request("images/generations", payload)
-            debug.trace(6, f"generate_image raw response: {response}")
-            data_list = response.get("data", [])
-            if not data_list:
-                debug.trace(3, "generate_image: empty data list in response")
-            else:
-                item = data_list[0]
-                # Support both URL-based and base64-encoded responses
-                if "url" in item:
-                    img_url = item["url"]
-                    debug.trace(5, f"generate_image: downloading from {img_url}")
-                    img_response = requests.get(img_url, timeout=self.timeout)
-                    img_response.raise_for_status()
-                    image_bytes = img_response.content
-                elif "b64_json" in item:
-                    image_bytes = base64.b64decode(item["b64_json"])
+        if check_imggen:
+            payload: Dict[str, Any] = {
+                "model": model,
+                "prompt": prompt,
+                "n": n,
+                "size": size,
+            }
+            try:
+                response = self._send_request("images/generations", payload)
+                debug.trace(6, f"generate_image raw response: {response}")
+                data_list = response.get("data", [])
+                if not data_list:
+                    debug.trace(3, "generate_image: empty data list in response")
                 else:
-                    debug.trace(3, f"generate_image: unrecognized item format: {item}")
-        except Exception:             # pylint: disable=broad-exception-caught
-            system.print_exception_info("generate_image")
+                    item = data_list[0]
+                    # Support both URL-based and base64-encoded responses
+                    if "url" in item:
+                        img_url = item["url"]
+                        debug.trace(5, f"generate_image: downloading from {img_url}")
+                        img_response = requests.get(img_url, timeout=self.timeout)
+                        img_response.raise_for_status()
+                        image_bytes = img_response.content
+                    elif "b64_json" in item:
+                        image_bytes = base64.b64decode(item["b64_json"])
+                    else:
+                        debug.trace(3, f"generate_image: unrecognized item format: {item}")
+            except Exception:             # pylint: disable=broad-exception-caught
+                system.print_exception_info("generate_image")
+        else:
+            debug.trace(4, "generate_image: skipping /images/generations (check_imggen=False)")
         # Fallback: try accessing the image model via the chat completions endpoint.
         # POE image bots (e.g. FLUX-schnell) are callable this way even when the
         # dedicated /images/generations endpoint is not enabled for the account.
