@@ -26,8 +26,8 @@ import os
 import sys
 
 # Installed packages
-from PySide6.QtCore import QDate, QEvent, QObject, Qt, QThread, QTimer
-from PySide6.QtGui import QFont, QKeySequence, QPixmap, QShortcut, QTextCharFormat
+from PySide6.QtCore import QDate, QEvent, QObject, Qt, QThread, QTimer, QRect
+from PySide6.QtGui import QFont, QIcon, QKeySequence, QPainter, QColor, QPixmap, QShortcut, QTextCharFormat
 from PySide6.QtWidgets import (
     QApplication, QCalendarWidget, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
     QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit,
@@ -338,7 +338,66 @@ def main():
     # Hide the spin buttons (red circle in screenshot)
     date_edit.setButtonSymbols(QDateEdit.NoButtons)
 
-    cal_button = QPushButton("\U0001F4C5")      # U+1F4C5: 📅
+    def _make_calendar_icon(size: int = 32) -> QIcon:
+        """Draw a monthly-grid calendar icon (5-col × 6-row day cells + header bar).
+
+        No day number is shown — the grid pattern evokes a monthly view without
+        the cognitive dissonance of a large prominent date digit.
+        """
+        pix = QPixmap(size, size)
+        pix.fill(Qt.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.Antialiasing)
+
+        bg        = QColor("#4CAF50")   # green body (matches app theme)
+        header    = QColor("#2E7D32")   # darker green header strip
+        cell_line = QColor("#A5D6A7")   # light green grid lines
+        cell_bg   = QColor("#FFFFFF")   # white day cells
+        ring      = QColor("#1B5E20")   # dark ring/border
+
+        # Outer rounded rectangle (calendar body)
+        p.setPen(Qt.NoPen)
+        p.setBrush(bg)
+        p.drawRoundedRect(1, 1, size - 2, size - 2, 3, 3)
+
+        # Header bar (top ~25 %)
+        header_h = max(6, size // 4)
+        p.setBrush(header)
+        p.drawRoundedRect(1, 1, size - 2, header_h + 2, 3, 3)
+        p.setBrush(bg)
+        p.drawRect(1, header_h // 2, size - 2, header_h)  # flatten bottom of header
+
+        # Two binding rings on the header
+        p.setBrush(ring)
+        ring_r = max(2, size // 12)
+        for rx in (size // 3, size * 2 // 3):
+            p.drawEllipse(rx - ring_r, 0, ring_r * 2, ring_r * 2 + 2)
+
+        # Day-cell grid: 5 columns × 6 rows
+        cols, rows = 5, 6
+        pad = max(2, size // 16)
+        grid_x = pad
+        grid_y = header_h + pad
+        grid_w = size - 2 * pad
+        grid_h = size - grid_y - pad
+        cell_w = grid_w / cols
+        cell_h = grid_h / rows
+        p.setBrush(cell_bg)
+        p.setPen(cell_line)
+        for r in range(rows):
+            for c in range(cols):
+                cx = int(grid_x + c * cell_w) + 1
+                cy = int(grid_y + r * cell_h) + 1
+                cw = max(1, int(cell_w) - 2)
+                ch = max(1, int(cell_h) - 2)
+                p.drawRect(cx, cy, cw, ch)
+
+        p.end()
+        return QIcon(pix)
+
+    cal_button = QPushButton()
+    cal_button.setIcon(_make_calendar_icon(32))
+    cal_button.setIconSize(cal_button.sizeHint())
     cal_button.setObjectName("cal_button")
     cal_button.setFixedWidth(48)
 
