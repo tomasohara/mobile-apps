@@ -17,13 +17,17 @@
 """Displays random historical tidbit"""
 
 # Standard packages
+import base64
 import datetime
+import glob
+import importlib.util
+import json
 import os
 import sys
 
 # Installed packages
-from PySide6.QtCore import QDate, QEvent, QObject, Qt, QThread, QTimer
-from PySide6.QtGui import QFont, QPixmap, QTextCharFormat
+from PySide6.QtCore import QDate, QEvent, QObject, Qt, QThread, QTimer, QRect
+from PySide6.QtGui import QFont, QIcon, QKeySequence, QPainter, QColor, QPixmap, QShortcut, QTextCharFormat
 from PySide6.QtWidgets import (
     QApplication, QCalendarWidget, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
     QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit,
@@ -55,7 +59,11 @@ POE_MODEL = system.getenv_text(
     skip_register=True)
 POE_TIMEOUT = system.getenv_float(
     "POE_TIMEOUT", 30.0,
-    desc="Timeout in seconds",
+    desc="Timeout in seconds for text model calls",
+    skip_register=True)
+POE_IMAGE_TIMEOUT = system.getenv_float(
+    "POE_IMAGE_TIMEOUT", 120.0,
+    desc="Timeout in seconds for image generation calls (FLUX-schnell can take 60-90 s)",
     skip_register=True)
 POE_IMAGE_MODEL = system.getenv_text(
     "POE_IMAGE_MODEL", "FLUX-schnell",
@@ -67,34 +75,135 @@ SHOW_IMAGE = system.getenv_bool(
     skip_register=True)
 
 # Result cache: (date_str, age_group) -> {"tidbit", "image_bytes", "image_prompt"}
+# In-memory dict; write-through to disk via _save_cache() / loaded at startup via _load_cache().
 _fetch_cache = {}
 
-def _load_local_poe_client():
-    """Load the local poe_client.py by absolute path so the mezcla version is never used.
-    Returns the module object (with generate_image_prompt / generate_image).
+def _cache_file_path() -> str:
+    """Return the path to the on-disk JSON cache file.
+
+    Desktop: <app_dir>/tidbit_cache.json
+    Android: /data/data/<package>/files/tidbit_cache.json (same dir as main.pyc)
+    The directory is guaranteed writable on both platforms.
     """
-    import importlib.util
-    import sys as _sys
-    cached = _sys.modules.get("_local_poe_client")
-    if cached is not None:
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(app_dir, "tidbit_cache.json")
+
+
+def _load_cache():
+    """Load the disk cache into _fetch_cache at startup (best-effort; silent on error)."""
+    path = _cache_file_path()
+    debug.trace(4, f"_load_cache: reading {path!r}")
+    try:
+        with open(path, encoding="utf-8") as f:
+            raw = json.load(f)
+        for key_str, entry in raw.items():
+            date_str, age_group = key_str.split("|", 1)
+            # image_bytes is stored as base64 string; decode back to bytes
+            img_b64 = entry.get("image_bytes", "")
+            entry["image_bytes"] = base64.b64decode(img_b64) if img_b64 else b""
+            _fetch_cache[(date_str, age_group)] = entry
+        debug.trace(3, f"_load_cache: loaded {len(_fetch_cache)} entries from {path!r}")
+    except FileNotFoundError:
+        debug.trace(4, "_load_cache: no cache file yet")
+    except Exception:                    # pylint: disable=broad-exception-caught
+        system.print_exception_info("_load_cache")
+
+
+def _save_cache():
+    """Persist _fetch_cache to disk (best-effort; silent on error)."""
+    path = _cache_file_path()
+    debug.trace(4, f"_save_cache: writing {len(_fetch_cache)} entries to {path!r}")
+    try:
+        raw = {}
+        for (date_str, age_group), entry in _fetch_cache.items():
+            key_str = f"{date_str}|{age_group}"
+            img_bytes = entry.get("image_bytes") or b""
+            raw[key_str] = {
+                "tidbit": entry.get("tidbit", ""),
+                "image_bytes": base64.b64encode(img_bytes).decode("ascii"),
+                "image_prompt": entry.get("image_prompt", ""),
+            }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(raw, f, indent=2)
+        debug.trace(3, f"_save_cache: saved {len(raw)} entries")
+    except Exception:                    # pylint: disable=broad-exception-caught
+        system.print_exception_info("_save_cache")
+
+
+# Load any previously saved results immediately at module import time
+_load_cache()
+
+def _load_local_poe_client():
+    """Load the local poe_client ensuring the correct (non-mezcla) version is used.
+
+    Desktop: loads poe_client.py by absolute path so the mezcla poe_client is never
+    accidentally imported instead.
+    Android: buildozer/p4a compiles .py → .pyc and deploys only the .pyc (no source).
+    Python 3 will NOT find a bare poe_client.pyc in a directory via import_module() —
+    it expects either a .py source or __pycache__/module.cpython-3XX.pyc layout.
+    We therefore look for poe_client.pyc next to main.pyc and load it explicitly via
+    spec_from_file_location, which accepts both .py and .pyc paths.
+
+    Key correctness rules:
+      - Only register in sys.modules AFTER exec_module succeeds (never before).
+      - Validate any cached entry before returning it (hasattr POEClient guard).
+      - Pop stale/broken cache entries so retry attempts can succeed.
+    """
+    # Return cached module only if it was fully initialized
+    cached = sys.modules.get("_local_poe_client")
+    if cached is not None and hasattr(cached, "POEClient"):
         return cached
-    _poc_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "poe_client.py")
-    _spec = importlib.util.spec_from_file_location("_local_poe_client", _poc_path)
-    _mod = importlib.util.module_from_spec(_spec)
-    # Register under private name so 'import poe_client' still works normally
-    _sys.modules["_local_poe_client"] = _mod
-    _spec.loader.exec_module(_mod)
-    return _mod
+    # Remove any stale/broken entry left by a previous failed load attempt
+    sys.modules.pop("_local_poe_client", None)
+
+    _app_dir = os.path.dirname(os.path.abspath(__file__))
+
+    def _load_by_path(path):
+        """Load module from path (works for both .py and .pyc)."""
+        debug.trace(5, f"_load_local_poe_client: loading from {path!r}")
+        _spec = importlib.util.spec_from_file_location("_local_poe_client", path)
+        _m = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_m)
+        sys.modules["_local_poe_client"] = _m
+        return _m
+
+    # 1. Desktop path: poe_client.py next to main.py
+    _poc_py = os.path.join(_app_dir, "poe_client.py")
+    if os.path.exists(_poc_py):
+        return _load_by_path(_poc_py)
+
+    # 2. Android path: buildozer deploys poe_client.pyc directly in the app dir
+    #    (same directory as main.pyc).  Python 3 import_module() cannot find a
+    #    bare .pyc in a directory, so we locate and load it explicitly.
+    _poc_pyc = os.path.join(_app_dir, "poe_client.pyc")
+    debug.trace(4, f"_load_local_poe_client: .py not found; trying {_poc_pyc!r} "
+                f"(exists={os.path.exists(_poc_pyc)})")
+    if os.path.exists(_poc_pyc):
+        return _load_by_path(_poc_pyc)
+
+    # 3. Last-resort: search __pycache__ for any cpython .pyc variant
+    _cache_pattern = os.path.join(_app_dir, "__pycache__", "poe_client.cpython-*.pyc")
+    _candidates = sorted(glob.glob(_cache_pattern))
+    debug.trace(4, f"_load_local_poe_client: __pycache__ candidates={_candidates!r}")
+    if _candidates:
+        return _load_by_path(_candidates[-1])
+
+    raise ImportError(
+        f"Cannot find poe_client.py or poe_client.pyc in {_app_dir!r}; "
+        f"checked: {_poc_py!r}, {_poc_pyc!r}, {_cache_pattern!r}"
+    )
 
 
 def get_random_tidbit(date_str=None, prompt_override=None,
-                      prefer_topics=None, exclude_topics=None, age_group=None):
+                      prefer_topics=None, exclude_topics=None,
+                      age_group=None, language=None):
     """Fetch a random historical tidbit via POE API
     DATE_STR: date like "March 01" (defaults to today)
     PROMPT_OVERRIDE: custom prompt (use {date} placeholder for the date)
     PREFER_TOPICS: comma-separated topics to prefer
     EXCLUDE_TOPICS: comma-separated topics to exclude
     AGE_GROUP: target audience age range (e.g., "3-5", "18+")
+    LANGUAGE: language for the response (e.g., "Spanish"); None or "English" = no instruction
     """
     if not date_str:
         date_str = datetime.date.today().strftime("%B %d")
@@ -110,6 +219,9 @@ def get_random_tidbit(date_str=None, prompt_override=None,
         question += f". Exclude the following topics: {exclude_topics.strip()}"
     if age_group and age_group != "18+":
         question += f". Tailor the content to be appropriate for ages {age_group}."
+    # Language injection: ask LLM to respond in the selected language
+    if language and language not in ("English", ""):
+        question += f" Please respond in {language}."
     debug.trace(4, f"get_random_tidbit: question={question!r}")
     result = ""
     try:
@@ -117,8 +229,9 @@ def get_random_tidbit(date_str=None, prompt_override=None,
         poc = _load_local_poe_client()
         client = poc.POEClient(api_key=POE_API, model=POE_MODEL)
         result = client.ask(question)
-    except Exception as exc:
-        result = f"Unable to fetch tidbit for {date_str}: {exc}"
+    except Exception as exc:      # pylint: disable=broad-exception-caught
+        result = f"Error: Unable to fetch tidbit for {date_str}: {exc}"
+    debug.trace(5, f"get_random_tidbit() => {result!r}")
     return result
 
 def get_tidbit_image(tidbit, image_model=None, age_group=None):
@@ -126,6 +239,7 @@ def get_tidbit_image(tidbit, image_model=None, age_group=None):
     Returns (image_bytes, image_prompt); image_bytes is None on failure.
     Uses an LLM call to convert the tidbit into a visual, NSFW-filtered prompt first.
     AGE_GROUP: target audience age range (e.g., "3-5", "18+") for filtering.
+    Note: image generation can take 60-90 s; set POE_IMAGE_TIMEOUT env var to adjust.
     """
     image_bytes = None
     image_prompt = ""
@@ -135,8 +249,11 @@ def get_tidbit_image(tidbit, image_model=None, age_group=None):
         client = poc.POEClient(api_key=POE_API, model=POE_MODEL)
         image_prompt = client.generate_image_prompt(tidbit, age_group=age_group)
         debug.trace(4, f"get_tidbit_image: image_prompt={image_prompt!r}")
+        image_timeout = getattr(poc, "POE_IMAGE_TIMEOUT", 120)
+        debug.trace(4, f"get_tidbit_image: calling generate_image (image_timeout={image_timeout} s)")
         image_bytes = client.generate_image(image_prompt, model=image_model or POE_IMAGE_MODEL)
-    except Exception as exc:
+        debug.trace(4, f"get_tidbit_image: got {len(image_bytes) if image_bytes else 0} bytes")
+    except Exception as exc:      # pylint: disable=broad-exception-caught
         debug.trace(3, f"get_tidbit_image: failed: {exc}")
         image_prompt = image_prompt or f"(error: {exc})"
     return image_bytes, image_prompt
@@ -154,14 +271,14 @@ def main():
     # Style
     app.setStyleSheet("""
         QWidget {
-            background-color: #f4f6f9;
-            color: #2d3748;
+            background-color: #ede0c8;
+            color: #2a1f0e;
             font-family: sans-serif;
             font-size: 13px;
         }
         QLineEdit, QDateEdit, QComboBox, QTextEdit {
-            background-color: #ffffff;
-            border: 1px solid #d2d8e3;
+            background-color: #f8f4ec;
+            border: 1px solid #c8b898;
             border-radius: 6px;
             padding: 5px 8px;
         }
@@ -171,27 +288,49 @@ def main():
             color: #ffffff;
             border: none;
             border-radius: 6px;
-            padding: 6px 14px;
+            padding: 6px 18px;
             font-weight: bold;
             font-size: 13px;
         }
         QPushButton:disabled {
-            background-color: #a0b8cc;
+            background-color: #b0c8dc;
         }
         QPushButton:hover:!disabled {
             background-color: #3a6f98;
         }
+        #fetch_button {
+            background-color: #6a9a5a;
+            padding: 5px 14px;
+        }
+        #fetch_button:hover {
+            background-color: #527a44;
+        }
         #quit_button {
-            background-color: #4a8c5c;
+            background-color: #a04040;
+            border-radius: 3px;
+            padding: 0px;
+            font-size: 12px;
+            font-weight: bold;
         }
         #quit_button:hover {
-            background-color: #3a7c4c;
+            background-color: #7a2e2e;
         }
         #cal_button {
             background-color: transparent;
             border: none;
-            font-size: 22px;
             padding: 0px;
+        }
+        #toggle_button {
+            background-color: transparent;
+            color: #4a7fa8;
+            border: none;
+            text-align: left;
+            padding: 1px 2px;
+            font-size: 11px;
+            font-weight: normal;
+        }
+        #toggle_button:hover {
+            color: #2d5f80;
         }
         QDateEdit::up-button, QDateEdit::down-button {
             width: 0px;
@@ -200,12 +339,12 @@ def main():
         }
         #result_card {
             background-color: #ffffff;
-            border: 1px solid #d2d8e3;
+            border: 1px solid #c8b898;
             border-radius: 8px;
         }
         #image_card {
             background-color: #ffffff;
-            border: 1px solid #d2d8e3;
+            border: 1px solid #c8b898;
             border-radius: 8px;
         }
         #image_caption {
@@ -234,9 +373,59 @@ def main():
     # Hide the spin buttons (red circle in screenshot)
     date_edit.setButtonSymbols(QDateEdit.NoButtons)
 
-    cal_button = QPushButton("\U0001F4C5")      # U+1F4C5: 📅
+    def _make_calendar_icon(size: int = 32) -> QIcon:
+        """Draw a traditional monthly-grid calendar icon (7 cols × 5 rows day cells).
+
+        White body with a warm-blue header strip. No binding rings — the full
+        icon area is used for the grid so cells are as large and legible as possible.
+        """
+        pix = QPixmap(size, size)
+        pix.fill(Qt.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.Antialiasing)
+
+        body      = QColor("#FFFFFF")    # white calendar body
+        header    = QColor("#5a7fa0")    # muted blue header (blends with parchment)
+        grid_line = QColor("#a8b4c0")    # soft gray grid lines
+
+        # Outer rounded rectangle (calendar body)
+        p.setPen(Qt.NoPen)
+        p.setBrush(body)
+        p.drawRoundedRect(0, 0, size, size, 3, 3)
+
+        # Header bar — top ~20 % of the icon
+        header_h = max(5, size * 20 // 100)
+        p.setBrush(header)
+        p.drawRoundedRect(0, 0, size, header_h + 3, 3, 3)
+        # Flatten the rounded bottom of the header
+        p.drawRect(0, header_h // 2, size, header_h - header_h // 2 + 3)
+
+        # Day-cell grid: 7 columns (Sun–Sat) × 5 rows (weeks)
+        cols, rows = 7, 5
+        pad = 1
+        grid_x = pad
+        grid_y = header_h + pad
+        grid_w = size - 2 * pad
+        grid_h = size - grid_y - pad
+        cell_w = grid_w / cols
+        cell_h = grid_h / rows
+        p.setBrush(body)
+        p.setPen(grid_line)
+        for r in range(rows):
+            for c in range(cols):
+                cx = int(grid_x + c * cell_w)
+                cy = int(grid_y + r * cell_h)
+                cw = max(1, int(cell_w) - 1)
+                ch = max(1, int(cell_h) - 1)
+                p.drawRect(cx, cy, cw, ch)
+
+        p.end()
+        return QIcon(pix)
+
+    cal_button = QPushButton()
+    cal_button.setIcon(_make_calendar_icon(32))
+    cal_button.setIconSize(cal_button.sizeHint())
     cal_button.setObjectName("cal_button")
-    cal_button.setFixedWidth(48)
 
     def open_calendar_dialog():
         """Create calendar for selecting date of tidbit"""
@@ -266,9 +455,14 @@ def main():
 
     cal_button.clicked.connect(open_calendar_dialog)
 
-    date_row = QHBoxLayout()
-    date_row.addWidget(date_edit, 1)
-    date_row.addWidget(cal_button)
+    # --- Buttons defined here so they can be placed in the header row ---
+    fetch_button = QPushButton("Fetch")
+    fetch_button.setObjectName("fetch_button")
+
+    quit_button = QPushButton("✕")
+    quit_button.setObjectName("quit_button")
+    quit_button.setFixedSize(22, 22)
+    quit_button.setToolTip("Quit")
 
     prompt_edit = QLineEdit(DEFAULT_PROMPT)
 
@@ -278,22 +472,63 @@ def main():
     exclude_edit = QLineEdit()
     exclude_edit.setPlaceholderText("e.g. wars, politics, religion")
 
-    form_layout = QFormLayout()
-    form_layout.addRow("Date:", date_row)
-    form_layout.addRow("Prompt:", prompt_edit)
-
-    # Add Prefer Topics with suggestion
-    form_layout.addRow("Prefer topics:", prefer_edit)
-
-    # Add Exclude Topics with suggestion
-    form_layout.addRow("Exclude topics:", exclude_edit)
-
     # Age group combobox: controls content and image filtering
     AGE_GROUPS = ["18+", "14-18", "9-14", "6-9", "3-5"]
     age_combo = QComboBox()
     age_combo.addItems(AGE_GROUPS)
     age_combo.setCurrentIndex(0)      # default: 18+
-    form_layout.addRow("Age group:", age_combo)
+
+    # Language combo: injected into the prompt so the LLM responds in that language
+    LANGUAGES = [
+        "English", "Spanish", "French", "German", "Portuguese",
+        "Italian", "Japanese", "Chinese (Simplified)", "Korean",
+        "Arabic", "Russian", "Hindi", "Dutch", "Polish", "Swedish",
+    ]
+    lang_combo = QComboBox()
+    lang_combo.addItems(LANGUAGES)
+    lang_combo.setCurrentIndex(0)     # default: English
+
+    # --- Row 1: Date + Age + Language + quit (all always visible) ---
+    date_row = QHBoxLayout()
+    date_row.setSpacing(6)
+    date_row.addWidget(QLabel("Date:"))
+    date_row.addWidget(date_edit, 2)
+    date_row.addWidget(cal_button)
+    date_row.addSpacing(10)
+    date_row.addWidget(QLabel("Age:"))
+    date_row.addWidget(age_combo)
+    date_row.addSpacing(6)
+    date_row.addWidget(QLabel("Lang:"))
+    date_row.addWidget(lang_combo)
+    date_row.addSpacing(6)
+    date_row.addWidget(quit_button)
+
+    # --- Row 2: Prompt + Fetch inline ---
+    prompt_row = QHBoxLayout()
+    prompt_row.setSpacing(6)
+    prompt_row.addWidget(QLabel("Prompt:"))
+    prompt_row.addWidget(prompt_edit, 1)
+    prompt_row.addWidget(fetch_button)
+
+    # --- Collapsible "Advanced settings" (prefer/exclude topics) ---
+    adv_widget = QWidget()
+    adv_form = QFormLayout(adv_widget)
+    adv_form.setContentsMargins(16, 2, 0, 2)
+    adv_form.setSpacing(4)
+    adv_form.addRow("Prefer topics:", prefer_edit)
+    adv_form.addRow("Exclude topics:", exclude_edit)
+    adv_widget.setVisible(False)
+
+    def _toggle_section(widget, button, label):
+        """Toggle a collapsible section open/closed, updating the button arrow."""
+        visible = not widget.isVisible()
+        widget.setVisible(visible)
+        button.setText(("▼ " if visible else "▶ ") + label)
+
+    adv_toggle = QPushButton("▶ Advanced settings")
+    adv_toggle.setObjectName("toggle_button")
+    adv_toggle.clicked.connect(
+        lambda: _toggle_section(adv_widget, adv_toggle, "Advanced settings"))
 
     separator = QFrame()
     separator.setFrameShape(QFrame.HLine)
@@ -377,10 +612,12 @@ def main():
     debug_font.setPointSize(8)
     debug_pane.setFont(debug_font)
     debug_pane.setPlaceholderText("Debug info will appear after fetch.")
+    debug_pane.setVisible(False)  # hidden by default; toggle with dbg_toggle
 
-    fetch_button = QPushButton("Fetch Tidbit")
-    quit_button = QPushButton("Quit")
-    quit_button.setObjectName("quit_button")
+    dbg_toggle = QPushButton("▶ Debug")
+    dbg_toggle.setObjectName("toggle_button")
+    dbg_toggle.clicked.connect(
+        lambda: _toggle_section(debug_pane, dbg_toggle, "Debug"))
 
     def _set_debug_info(date_str, tidbit, image_prompt, age_group, extra=""):
         """Populate the debug pane with run details."""
@@ -388,6 +625,7 @@ def main():
         lines = [
             f"date={date_str}  age_group={age_group}  {extra}",
             f"text_model={POE_MODEL}  image_model={POE_IMAGE_MODEL}",
+            f"text_timeout={POE_TIMEOUT}s  image_timeout={POE_IMAGE_TIMEOUT}s",
             f"api_key={api_key_display}",
             f"tidbit_len={len(tidbit)}",
             f"image_prompt: {image_prompt or '(none)'}",
@@ -404,7 +642,7 @@ def main():
         fetch_done = Signal(str, str, str, str)  # date_str, age_group, image_prompt, note
 
         def __init__(self, date_str, prompt_text, prefer, exclude, age_group,
-                     bypass_cache, parent=None):
+                     bypass_cache, language=None, parent=None):
             super().__init__(parent)
             self.date_str = date_str
             self.prompt_text = prompt_text
@@ -412,6 +650,7 @@ def main():
             self.exclude = exclude
             self.age_group = age_group
             self.bypass_cache = bypass_cache
+            self.language = language
 
         def run(self):
             """Fetch tidbit (and image) then emit signals back to the main thread."""
@@ -427,7 +666,8 @@ def main():
 
             tidbit = get_random_tidbit(
                 self.date_str, self.prompt_text,
-                self.prefer, self.exclude, self.age_group)
+                self.prefer, self.exclude, self.age_group,
+                language=self.language)
             self.tidbit_ready.emit(tidbit)
 
             image_bytes = b""
@@ -447,6 +687,7 @@ def main():
                 "image_bytes": image_bytes,
                 "image_prompt": image_prompt,
             }
+            _save_cache()
             self.fetch_done.emit(self.date_str, self.age_group, image_prompt, note)
 
     _worker = [None]  # keeps reference so GC doesn't collect the running thread
@@ -457,8 +698,11 @@ def main():
 
     def _on_image(image_bytes, image_prompt):
         """Slot: decode and display image when it arrives."""
+        magic = image_bytes[:8] if image_bytes else b""
+        debug.trace(3, f"_on_image: received {len(image_bytes)} bytes magic={magic!r}")
         pixmap = QPixmap()
-        pixmap.loadFromData(image_bytes)
+        ok = pixmap.loadFromData(image_bytes)
+        debug.trace(3, f"_on_image: loadFromData ok={ok} isNull={pixmap.isNull()}")
         if not pixmap.isNull():
             _raw_pixmap[0] = pixmap
             _rescale_image_label()
@@ -478,7 +722,9 @@ def main():
     def _on_image_unavailable():
         """Slot: show placeholder text when no image was returned."""
         if _raw_pixmap[0] is None:
-            image_label.setText("No image.")
+            image_label.setText("No image.\n(timeout or API error)")
+            debug.trace(3, "_on_image_unavailable: image not received — likely a timeout; "
+                        "set POE_IMAGE_TIMEOUT env var to increase (default 120 s)")
             # Retrieve prompt from debug pane as fallback display
             cached_prompt = ""
             for line in debug_pane.toPlainText().splitlines():
@@ -502,10 +748,11 @@ def main():
 
         date_str = date_edit.date().toString("MMMM dd")
         age_group = age_combo.currentText()
+        language = lang_combo.currentText()
         worker = _FetchWorker(
             date_str, prompt_edit.text(),
             prefer_edit.text(), exclude_edit.text(),
-            age_group, bypass_cache, parent=window)
+            age_group, bypass_cache, language=language, parent=window)
         worker.tidbit_ready.connect(_on_tidbit)
         worker.image_ready.connect(_on_image)
         worker.fetch_done.connect(_on_fetch_done)
@@ -518,13 +765,8 @@ def main():
     quit_button.clicked.connect(app.quit)
 
     # F5 shortcut to trigger fetch (natural keyboard shortcut for "refresh")
-    from PySide6.QtGui import QKeySequence, QShortcut
     _f5 = QShortcut(QKeySequence("F5"), window)
     _f5.activated.connect(lambda: on_fetch(bypass_cache=True))
-
-    button_row = QHBoxLayout()
-    button_row.addWidget(fetch_button)
-    button_row.addWidget(quit_button)
 
     # Content row: text card (2/3) + image card (1/3)
     content_row = QHBoxLayout()
@@ -532,10 +774,15 @@ def main():
     content_row.addWidget(image_card, 1)
 
     layout = QVBoxLayout()
-    layout.addLayout(form_layout)
+    layout.setContentsMargins(8, 8, 8, 8)
+    layout.setSpacing(6)
+    layout.addLayout(date_row)
+    layout.addLayout(prompt_row)
+    layout.addWidget(adv_toggle)
+    layout.addWidget(adv_widget)
     layout.addWidget(separator)
     layout.addLayout(content_row, 1)
-    layout.addLayout(button_row)
+    layout.addWidget(dbg_toggle)
     layout.addWidget(debug_pane)
     window.setLayout(layout)
 

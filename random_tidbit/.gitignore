@@ -1,0 +1,26 @@
+# Local .gitignore for random_tidbit project
+#
+# Note:
+# - Git applies gitignore rules hierarchically. The global gitignore
+#   (configured via 'git config core.excludesFile', pointing to _global-gitignore.list)
+#   still applies alongside this file.
+# - Rules in a more local .gitignore take precedence over global ones on
+#   conflicts; use negation (e.g., '!_kept_file.log') to un-exclude a
+#   globally-ignored path.
+# - See also: ../.gitignore for repo-wide rules (.buildozer/, bin/, etc.)
+#
+
+# Runtime cache — large, ephemeral, not meaningful across machines
+tidbit_cache.json
+
+# Suggestions for additional local ignores
+# (most are already covered by _global-gitignore.list or ../.gitignore):
+#
+# *.pyc / __pycache__/   — Python bytecode (global: *.pyc, *.pyo)
+# _*.log / _*.list       — underscore-prefixed dev artefacts (global: **/_*)
+# _regular-buildozer-*   — build logs (global: **/_*)
+# _logcat-*.log          — Android logcat captures (global: **/_*)
+# mezcla-*.whl           — local wheel copies (global: *.bin doesn't cover .whl;
+#                          add *.whl here if desired, but keep if used in build)
+# .buildozer/            — Android build tree (../.gitignore)
+# bin/                   — APK outputs (../.gitignore)

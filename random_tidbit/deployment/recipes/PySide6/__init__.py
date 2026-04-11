@@ -101,5 +101,16 @@ class PySideRecipe(PythonRecipe):
             except KeyError:
                 info(f"Warning: platform plugin {plugin_path} not found in wheel")
 
+            # 5) Copy JPEG and WebP imageformat plugins so Qt can decode images
+            # NOTE: qpng does NOT exist as a plugin — PNG is built into QtGui natively
+            for fmt in ("qjpeg", "qwebp", "qgif"):
+                img_plugin = f"libplugins_imageformats_{fmt}_{arch.arch}.so"
+                img_path = f"PySide6/Qt/plugins/imageformats/{img_plugin}"
+                try:
+                    (libs_dir / img_plugin).write_bytes(zf.read(img_path))
+                    info(f"  -> {img_plugin}")
+                except KeyError:
+                    info(f"Warning: imageformat plugin {img_path} not found in wheel")
+
 
 recipe = PySideRecipe()

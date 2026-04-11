@@ -33,10 +33,10 @@ source.exclude_dirs = tests, bin, venv, backup, old, deployment, log-files, __py
 
 # (list) List of exclusions using pattern matching
 # Do not prefix with './'
-source.exclude_patterns = license,images/*/*.jpg,_*,*.log,*.list,*.whl,*.spec.*,poe_client.py
+source.exclude_patterns = license,images/*/*.jpg,_*,*.log,*.list,*.whl,*.spec.*
 
 # (str) Application versioning (method 1)
-version = 0.2.6
+version = 0.2.7
 
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]
@@ -393,7 +393,7 @@ p4a.bootstrap = qt
 ## These are normally set by pyside6-android-deploy (see its buildozer.py wrapper).
 ## For a QtWidgets app (QApplication + QLabel), the minimum Qt modules are Core,Gui,Widgets.
 ## The Android platform plugin (plugins_platforms_qtforandroid) is required for display.
-p4a.extra_args = --qt-libs=Core,Gui,Widgets --load-local-libs=plugins_platforms_qtforandroid --init-classes=
+p4a.extra_args = --qt-libs=Core,Gui,Widgets --load-local-libs=plugins_platforms_qtforandroid,plugins_imageformats_qjpeg,plugins_imageformats_qwebp,plugins_imageformats_qgif --init-classes=
 
 
 ## OLD

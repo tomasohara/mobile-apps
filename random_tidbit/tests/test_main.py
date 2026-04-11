@@ -17,7 +17,10 @@ from mezcla.unittest_wrapper import TestWrapper, invoke_tests
 
 class TestIt(TestWrapper):
     """Class for testcase definition"""
-    script_module = "main"
+    # Note: script_module = "main" would cause TestWrapper.setUpClass to run
+    # 'python -m main --help', which starts the Qt event loop and hangs.
+    # Set to None so the --help probe is skipped entirely.
+    script_module = None
 
     def test_01_cut_paste_flags(self):
         """Verify the expected interaction flags for the result field"""
