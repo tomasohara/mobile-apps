@@ -84,7 +84,10 @@ POE_URL = system.getenv_text(
     desc="Base URL for POE API")
 POE_TIMEOUT = system.getenv_float(
     "POE_TIMEOUT", 30,
-    desc="Timeout for POE API call")
+    desc="Timeout for POE API call (text models)")
+POE_IMAGE_TIMEOUT = system.getenv_float(
+    "POE_IMAGE_TIMEOUT", 120,
+    desc="Timeout for image-generation API calls (FLUX etc. can take 60-90 s)")
 POE_IMAGE_MODEL = system.getenv_text(
     "POE_IMAGE_MODEL", "FLUX-schnell",
     desc="Default model for POE image generation (e.g., FLUX-schnell, FLUX-pro)")
@@ -488,16 +491,28 @@ class POEClient:
         POE image bots return the generated image as a URL or base64 data embedded in
         the assistant message content (often as markdown `![](url)` or a bare URL).
         MODEL: image generation model name (defaults to POE_IMAGE_MODEL).
+        Note: uses POE_IMAGE_TIMEOUT (default 120 s) instead of POE_TIMEOUT because
+        FLUX-schnell can take 60-90 s to respond.
         """
         if model is None:
             model = POE_IMAGE_MODEL
-        debug.trace(5, f"_generate_image_via_chat: model={model!r} prompt={prompt!r}")
+        # Image generation models are slow — use a longer timeout than text calls
+        image_timeout = POE_IMAGE_TIMEOUT
+        debug.trace(5, f"_generate_image_via_chat: model={model!r} prompt={prompt!r} "
+                    f"timeout={image_timeout}")
         try:
             payload = {
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
             }
-            response = self._send_request("chat/completions", payload)
+            debug.trace(4, f"_generate_image_via_chat: sending request to chat/completions "
+                        f"(timeout={image_timeout} s)")
+            url = f"{self.base_url}/chat/completions"
+            response_raw = requests.post(
+                url, headers=self.headers, json=payload, timeout=image_timeout)
+            debug.trace(5, f"_generate_image_via_chat: HTTP status={response_raw.status_code}")
+            response_raw.raise_for_status()
+            response = response_raw.json()
             choices = response.get("choices", [])
             if not choices:
                 debug.trace(3, "_generate_image_via_chat: no choices in response")
@@ -514,7 +529,7 @@ class POEClient:
             if match:
                 img_url = match.group(1).rstrip(")")
                 debug.trace(4, f"_generate_image_via_chat: downloading {img_url}")
-                dl = requests.get(img_url, timeout=self.timeout)
+                dl = requests.get(img_url, timeout=image_timeout)
                 dl.raise_for_status()
                 content_type = dl.headers.get("content-type", "unknown")
                 img_data = dl.content
@@ -525,8 +540,13 @@ class POEClient:
             # Try inline base64
             b64_match = re.search(r'data:image/\w+;base64,([A-Za-z0-9+/=]+)', content)
             if b64_match:
+                debug.trace(4, "_generate_image_via_chat: found inline base64 image")
                 return base64.b64decode(b64_match.group(1))
             debug.trace(3, "_generate_image_via_chat: no image found in response content")
+        except requests.exceptions.Timeout:
+            debug.trace(2, f"_generate_image_via_chat: timed out after {image_timeout} s "
+                        f"(raise POE_IMAGE_TIMEOUT to increase)")
+            system.print_exception_info("_generate_image_via_chat")
         except Exception:             # pylint: disable=broad-exception-caught
             system.print_exception_info("_generate_image_via_chat")
         return None
