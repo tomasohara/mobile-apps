@@ -30,8 +30,8 @@ from PySide6.QtCore import QDate, QEvent, QObject, QSize, Qt, QThread, QTimer, Q
 from PySide6.QtGui import QFont, QIcon, QKeySequence, QPainter, QColor, QPen, QPixmap, QShortcut, QTextCharFormat
 from PySide6.QtWidgets import (
     QApplication, QBoxLayout, QCalendarWidget, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
-    QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QTextEdit,
-    QVBoxLayout, QWidget)
+    QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QStyle,
+    QStyleOptionComboBox, QStylePainter, QTextEdit, QVBoxLayout, QWidget)
 from PySide6.QtCore import Signal
 
 # Local modules
@@ -114,6 +114,9 @@ COLOR_CAL_ICON_RING = "#f4e0d8"         # pale blush
 COLOR_CAL_DIALOG_BG = "#fff8ed"         # light parchment
 COLOR_REFRESH_ICON = "#5f7995"          # stormy steel blue
 
+DESKTOP_PHONE_PORTRAIT_WIDTH = 412
+DESKTOP_PHONE_PORTRAIT_HEIGHT = 915
+
 
 def _build_app_stylesheet() -> str:
     """Return the shared application stylesheet."""
@@ -189,13 +192,13 @@ def _build_app_stylesheet() -> str:
         #cal_button:hover {{
             background-color: {COLOR_CAL_BUTTON_HOVER};
         }}
-        #image_refresh_button {{
+        #image_refresh_button, #rotate_button {{
             background-color: {COLOR_CAL_BUTTON_BG};
             border: 1px solid {COLOR_BORDER_KHAKI};
             border-radius: 8px;
             padding: 3px;
         }}
-        #image_refresh_button:hover {{
+        #image_refresh_button:hover, #rotate_button:hover {{
             background-color: {COLOR_CAL_BUTTON_HOVER};
         }}
         #toggle_button {{
@@ -404,14 +407,58 @@ def _make_refresh_icon(size: int = 28) -> QIcon:
     return QIcon(pix)
 
 
+def _make_rotate_icon(size: int = 28) -> QIcon:
+    """Draw a devtools-style rotate icon for desktop orientation toggling."""
+    pix = QPixmap(size, size)
+    pix.fill(Qt.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.Antialiasing)
+
+    pen = QPen(QColor(COLOR_REFRESH_ICON), 1.8)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    p.setPen(pen)
+
+    phone_rect = QRect(size // 2 - 4, size // 2 - 7, 8, 14)
+    p.drawRoundedRect(phone_rect, 2, 2)
+    p.drawLine(phone_rect.left() + 2, phone_rect.top() + 3, phone_rect.right() - 2, phone_rect.top() + 3)
+    p.drawPoint(phone_rect.center().x(), phone_rect.bottom() - 2)
+
+    arc_rect = QRect(4, 4, size - 8, size - 8)
+    p.drawArc(arc_rect, 145 * 16, 115 * 16)
+    p.drawArc(arc_rect, 325 * 16, 115 * 16)
+    p.drawLine(7, size // 2 + 5, 4, size // 2 + 9)
+    p.drawLine(7, size // 2 + 5, 12, size // 2 + 7)
+    p.drawLine(size - 7, size // 2 - 5, size - 4, size // 2 - 9)
+    p.drawLine(size - 7, size // 2 - 5, size - 12, size // 2 - 7)
+
+    p.end()
+    return QIcon(pix)
+
+
+class _CenteredComboBox(QComboBox):
+    """Non-editable combo box that paints its current text centered."""
+
+    def paintEvent(self, event):
+        painter = QStylePainter(self)
+        option = QStyleOptionComboBox()
+        self.initStyleOption(option)
+        painter.drawComplexControl(QStyle.CC_ComboBox, option)
+        option.displayAlignment = Qt.AlignCenter
+        painter.drawControl(QStyle.CE_ComboBoxLabel, option)
+
+
+def _running_on_android() -> bool:
+    """Return True when running inside the Android app environment."""
+    return any(name in os.environ for name in ("ANDROID_ARGUMENT", "ANDROID_APP_PATH", "ANDROID_PRIVATE"))
+
+
 def _center_combo_text(combo):
-    """Center the current combo-box text without allowing free-form edits."""
-    combo.setEditable(True)
-    combo.setInsertPolicy(QComboBox.NoInsert)
-    line_edit = combo.lineEdit()
-    _configure_embedded_line_edit(line_edit, passthrough_mouse=True)
-    line_edit.setReadOnly(True)
-    return line_edit
+    """Center combo-box text while keeping the popup behavior native."""
+    combo.setEditable(False)
+    for index in range(combo.count()):
+        combo.setItemData(index, Qt.AlignCenter, Qt.TextAlignmentRole)
+    return combo
 
 
 def _configure_embedded_line_edit(line_edit, passthrough_mouse=False):
@@ -431,6 +478,15 @@ def _configure_embedded_line_edit(line_edit, passthrough_mouse=False):
         "QLineEdit { border: none; background: transparent; padding: 0px; margin: 0px; }"
     )
     return line_edit
+
+
+def _set_compact_control_width(widget, text, chrome_width=30, min_width=72, max_width=220):
+    """Size a single-line control to fit TEXT plus widget chrome."""
+    width = widget.fontMetrics().horizontalAdvance(text) + chrome_width
+    width = max(min_width, width)
+    width = min(max_width, width)
+    widget.setFixedWidth(width)
+    return width
 
 
 def _apply_age_group_presentation(age_group, result_text, image_label, image_caption,
@@ -479,13 +535,30 @@ def _content_layout_direction(width: int, height: int):
     return QBoxLayout.TopToBottom if height > width else QBoxLayout.LeftToRight
 
 
+def _control_layout_direction(width: int, height: int):
+    """Return the layout direction for the header controls."""
+    return QBoxLayout.TopToBottom if height > width else QBoxLayout.LeftToRight
+
+
+def _apply_control_layout_orientation(control_layout, width: int, height: int):
+    """Use one row in landscape and two stacked rows in portrait."""
+    direction = _control_layout_direction(width, height)
+    control_layout.setDirection(direction)
+    if control_layout.count() >= 3:
+        control_layout.setStretch(0, 0)
+        control_layout.setStretch(1, 0)
+        control_layout.setStretch(2, 1)
+    return direction
+
+
 def _content_holder_direction(content_direction):
     """Return the holder direction that centers cards on the cross axis."""
     return QBoxLayout.LeftToRight if content_direction == QBoxLayout.TopToBottom else QBoxLayout.TopToBottom
 
 
-def _apply_content_layout_orientation(content_layout, width: int, height: int, holder_layouts=None):
-    """Stack in portrait mode, place side-by-side in landscape, and center cards on the cross axis."""
+def _apply_content_layout_orientation(content_layout, width: int, height: int,
+                                      holder_layouts=None, card_widgets=None):
+    """Stack in portrait mode and let cards expand to fill the content area."""
     direction = _content_layout_direction(width, height)
     content_layout.setDirection(direction)
     if direction == QBoxLayout.TopToBottom:
@@ -494,10 +567,19 @@ def _apply_content_layout_orientation(content_layout, width: int, height: int, h
     else:
         content_layout.setStretch(0, 2)
         content_layout.setStretch(1, 1)
-    holder_direction = _content_holder_direction(direction)
-    for holder_layout in holder_layouts or []:
-        holder_layout.setDirection(holder_direction)
+    for card_widget in card_widgets or []:
+        card_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
     return direction
+
+
+def _rotate_window(window):
+    """Toggle between desktop phone portrait and landscape sizes."""
+    if _running_on_android():
+        return
+    if window.width() >= window.height():
+        window.resize(DESKTOP_PHONE_PORTRAIT_WIDTH, DESKTOP_PHONE_PORTRAIT_HEIGHT)
+    else:
+        window.resize(DESKTOP_PHONE_PORTRAIT_HEIGHT, DESKTOP_PHONE_PORTRAIT_WIDTH)
 
 ## Note: test by Gemini to resolve stack trace issue
 
@@ -723,7 +805,7 @@ def main():
     # Create main window widget
     window = QWidget()
     window.setWindowTitle("Random Tidbit")
-    window.setMinimumWidth(600)
+    window.setMinimumSize(360, 360)
 
     # Style
     app.setStyleSheet(_build_app_stylesheet())
@@ -737,6 +819,7 @@ def main():
     # Hide the spin buttons (red circle in screenshot)
     date_edit.setButtonSymbols(QDateEdit.NoButtons)
     _configure_embedded_line_edit(date_edit.lineEdit())
+    _set_compact_control_width(date_edit, date_edit.text(), chrome_width=28, min_width=100, max_width=150)
 
     cal_button = QPushButton()
     cal_button.setIcon(_make_calendar_icon(40))
@@ -781,10 +864,15 @@ def main():
             date_edit.setSelectedSection(QDateEdit.NoSection)
 
     cal_button.clicked.connect(open_calendar_dialog)
+    date_edit.dateChanged.connect(
+        lambda _date: _set_compact_control_width(
+            date_edit, date_edit.text(), chrome_width=28, min_width=100, max_width=150))
 
     # --- Buttons defined here so they can be placed in the header row ---
     fetch_button = QPushButton("Fetch")
     fetch_button.setObjectName("fetch_button")
+    fetch_button.setFixedHeight(34)
+    fetch_button.setFixedWidth(84)
 
     image_refresh_button = QPushButton()
     image_refresh_button.setObjectName("image_refresh_button")
@@ -793,24 +881,41 @@ def main():
     image_refresh_button.setIconSize(QSize(22, 22))
     image_refresh_button.setFixedSize(38, 34)
 
+    rotate_button = QPushButton()
+    rotate_button.setObjectName("rotate_button")
+    rotate_button.setToolTip("Rotate handset view (Ctrl+Shift+R)")
+    rotate_button.setIcon(_make_rotate_icon(28))
+    rotate_button.setIconSize(QSize(22, 22))
+    rotate_button.setFixedSize(38, 34)
+    rotate_button.setVisible(not _running_on_android())
+
     quit_button = QPushButton("X")
     quit_button.setObjectName("quit_button")
-    quit_button.setFixedSize(26, 26)
+    quit_button.setFixedSize(30, 30)
     quit_button.setToolTip("Quit")
 
     prompt_edit = QLineEdit(DEFAULT_PROMPT)
+    prompt_edit.setMinimumWidth(0)
+    prompt_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
     prefer_edit = QLineEdit()
     prefer_edit.setPlaceholderText("e.g. science, art, sports")
+    prefer_edit.setMinimumWidth(0)
+    prefer_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
     exclude_edit = QLineEdit()
     exclude_edit.setPlaceholderText("e.g. wars, politics, religion")
+    exclude_edit.setMinimumWidth(0)
+    exclude_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
     # Age group combobox: controls content and image filtering
-    age_combo = QComboBox()
+    age_combo = _CenteredComboBox()
     age_combo.addItems(AGE_GROUPS)
     age_combo.setCurrentIndex(0)      # default: 18+
     _center_combo_text(age_combo)
+    _set_compact_control_width(age_combo, age_combo.currentText(), chrome_width=34, min_width=66, max_width=96)
+    age_combo.currentTextChanged.connect(
+        lambda text: _set_compact_control_width(age_combo, text, chrome_width=34, min_width=66, max_width=96))
 
     # Language combo: injected into the prompt so the LLM responds in that language
     LANGUAGES = [
@@ -818,35 +923,62 @@ def main():
         "Italian", "Japanese", "Chinese (Simplified)", "Korean",
         "Arabic", "Russian", "Hindi", "Dutch", "Polish", "Swedish",
     ]
-    lang_combo = QComboBox()
+    lang_combo = _CenteredComboBox()
     lang_combo.addItems(LANGUAGES)
     lang_combo.setCurrentIndex(0)     # default: English
     _center_combo_text(lang_combo)
+    _set_compact_control_width(lang_combo, lang_combo.currentText(), chrome_width=34, min_width=96, max_width=180)
+    lang_combo.currentTextChanged.connect(
+        lambda text: _set_compact_control_width(lang_combo, text, chrome_width=34, min_width=96, max_width=180))
 
-    # --- Row 1: Date + Age + Language + image refresh + Fetch + quit ---
-    date_row = QHBoxLayout()
-    date_row.setSpacing(6)
-    date_row.addWidget(QLabel("Date:"))
-    date_row.addWidget(date_edit, 2)
-    date_row.addWidget(cal_button)
-    date_row.addSpacing(10)
-    date_row.addWidget(QLabel("Age:"))
-    date_row.addWidget(age_combo)
-    date_row.addSpacing(6)
-    date_row.addWidget(QLabel("Lang:"))
-    date_row.addWidget(lang_combo)
-    date_row.addSpacing(6)
-    date_row.addWidget(image_refresh_button)
-    date_row.addSpacing(4)
-    date_row.addWidget(fetch_button)
-    date_row.addSpacing(4)
-    date_row.addWidget(quit_button)
+    date_edit.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+    age_combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+    lang_combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+    # --- Header controls: primary date row plus secondary filters/actions ---
+    date_label = QLabel("Date:")
+    age_label = QLabel("Age:")
+    lang_label = QLabel("Lang:")
+
+    primary_controls = QWidget()
+    primary_controls.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+    primary_controls_layout = QHBoxLayout(primary_controls)
+    primary_controls_layout.setContentsMargins(0, 0, 0, 0)
+    primary_controls_layout.setSpacing(6)
+    primary_controls_layout.addWidget(date_label)
+    primary_controls_layout.addWidget(date_edit)
+    primary_controls_layout.addWidget(cal_button)
+
+    secondary_controls = QWidget()
+    secondary_controls.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+    secondary_controls_layout = QHBoxLayout(secondary_controls)
+    secondary_controls_layout.setContentsMargins(0, 0, 0, 0)
+    secondary_controls_layout.setSpacing(4)
+    secondary_controls_layout.addWidget(age_label)
+    secondary_controls_layout.addWidget(age_combo)
+    secondary_controls_layout.addSpacing(4)
+    secondary_controls_layout.addWidget(lang_label)
+    secondary_controls_layout.addWidget(lang_combo)
+    secondary_controls_layout.addSpacing(6)
+    secondary_controls_layout.addWidget(image_refresh_button)
+    secondary_controls_layout.addWidget(rotate_button)
+    secondary_controls_layout.addSpacing(8)
+    secondary_controls_layout.addWidget(fetch_button)
+    secondary_controls_layout.addSpacing(6)
+    secondary_controls_layout.addWidget(quit_button)
+
+    header_controls = QBoxLayout(QBoxLayout.LeftToRight)
+    header_controls.setSpacing(8)
+    header_controls.addWidget(primary_controls, 0, Qt.AlignLeft)
+    header_controls.addWidget(secondary_controls, 0, Qt.AlignLeft)
+    header_controls.addStretch(1)
 
     # --- Collapsible "Advanced settings" (prompt/prefer/exclude topics) ---
     adv_widget = QWidget()
     adv_form = QFormLayout(adv_widget)
     adv_form.setContentsMargins(16, 2, 0, 2)
     adv_form.setSpacing(4)
+    adv_form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
     adv_form.addRow("Prompt:", prompt_edit)
     adv_form.addRow("Prefer topics:", prefer_edit)
     adv_form.addRow("Exclude topics:", exclude_edit)
@@ -1180,42 +1312,28 @@ def main():
 
     fetch_button.clicked.connect(lambda: on_fetch(bypass_cache=True))
     image_refresh_button.clicked.connect(on_regenerate_image)
+    rotate_button.clicked.connect(lambda: _rotate_window(window))
     quit_button.clicked.connect(app.quit)
 
     # F5 shortcut to trigger fetch (natural keyboard shortcut for "refresh")
     _f5 = QShortcut(QKeySequence("F5"), window)
     _f5.activated.connect(lambda: on_fetch(bypass_cache=True))
-
-    # Content area: stacked in portrait mode, side-by-side in landscape.
-    # Each card sits inside a holder layout with stretch on both sides so the
-    # cards stay centered on the cross axis as orientation changes.
-    result_holder = QWidget()
-    result_holder_layout = QBoxLayout(QBoxLayout.TopToBottom, result_holder)
-    result_holder_layout.setContentsMargins(0, 0, 0, 0)
-    result_holder_layout.setSpacing(0)
-    result_holder_layout.addStretch(1)
-    result_holder_layout.addWidget(result_card)
-    result_holder_layout.addStretch(1)
-
-    image_holder = QWidget()
-    image_holder_layout = QBoxLayout(QBoxLayout.TopToBottom, image_holder)
-    image_holder_layout.setContentsMargins(0, 0, 0, 0)
-    image_holder_layout.setSpacing(0)
-    image_holder_layout.addStretch(1)
-    image_holder_layout.addWidget(image_card)
-    image_holder_layout.addStretch(1)
+    _rotate_shortcut = QShortcut(QKeySequence("Ctrl+Shift+R"), window)
+    _rotate_shortcut.activated.connect(lambda: _rotate_window(window))
 
     content_row = QBoxLayout(QBoxLayout.LeftToRight)
-    content_row.addWidget(result_holder, 2)
-    content_row.addWidget(image_holder, 1)
+    content_row.setSpacing(8)
+    content_row.addWidget(result_card, 2)
+    content_row.addWidget(image_card, 1)
 
     def _update_content_layout():
         """Update content orientation from the current window aspect ratio."""
+        _apply_control_layout_orientation(header_controls, window.width(), window.height())
         _apply_content_layout_orientation(
             content_row,
             window.width(),
             window.height(),
-            [result_holder_layout, image_holder_layout],
+            [result_card, image_card],
         )
 
     class _WindowLayoutAdapter(QObject):
@@ -1230,7 +1348,7 @@ def main():
     layout = QVBoxLayout()
     layout.setContentsMargins(8, 8, 8, 8)
     layout.setSpacing(6)
-    layout.addLayout(date_row)
+    layout.addLayout(header_controls)
     layout.addWidget(adv_toggle)
     layout.addWidget(adv_widget)
     layout.addWidget(separator)
@@ -1240,6 +1358,9 @@ def main():
     window.setLayout(layout)
     _update_content_layout()
 
+    if not _running_on_android():
+        window.resize(DESKTOP_PHONE_PORTRAIT_WIDTH, DESKTOP_PHONE_PORTRAIT_HEIGHT)
+        _update_content_layout()
     window.show()
 
     # Fix Qt quirk: ensure no initial highlighting in the date field

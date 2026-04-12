@@ -68,7 +68,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication, QBoxLayout, QComboBox, QWidget
+from PySide6.QtWidgets import QApplication, QBoxLayout, QComboBox, QSizePolicy, QWidget
 
 from mezcla import debug
 
@@ -140,6 +140,21 @@ class TestLayoutProportions(unittest.TestCase):
         """Landscape should be horizontal; portrait should stack vertically."""
         _ = QApplication.instance() or QApplication(sys.argv)
         self.assertEqual(
+            _main._control_layout_direction(900, 600),
+            QBoxLayout.LeftToRight,
+            "Landscape windows should keep header controls in one row")
+        self.assertEqual(
+            _main._control_layout_direction(600, 900),
+            QBoxLayout.TopToBottom,
+            "Portrait windows should stack the header control groups")
+
+        control_layout = QBoxLayout(QBoxLayout.LeftToRight)
+        _main._apply_control_layout_orientation(control_layout, 600, 900)
+        self.assertEqual(control_layout.direction(), QBoxLayout.TopToBottom)
+        _main._apply_control_layout_orientation(control_layout, 900, 600)
+        self.assertEqual(control_layout.direction(), QBoxLayout.LeftToRight)
+
+        self.assertEqual(
             _main._content_layout_direction(900, 600),
             QBoxLayout.LeftToRight,
             "Landscape windows should place text and image side-by-side")
@@ -151,23 +166,39 @@ class TestLayoutProportions(unittest.TestCase):
         layout = QBoxLayout(QBoxLayout.LeftToRight)
         layout.addWidget(QWidget(), 2)
         layout.addWidget(QWidget(), 1)
-        holder_a = QBoxLayout(QBoxLayout.TopToBottom)
-        holder_b = QBoxLayout(QBoxLayout.TopToBottom)
+        result_card = QWidget()
+        result_card.setObjectName("result_card")
+        image_card = QWidget()
+        image_card.setObjectName("image_card")
 
-        _main._apply_content_layout_orientation(layout, 600, 900, [holder_a, holder_b])
+        _main._apply_content_layout_orientation(
+            layout, 600, 900, card_widgets=[result_card, image_card])
         self.assertEqual(layout.direction(), QBoxLayout.TopToBottom)
         self.assertEqual(layout.stretch(0), 3)
         self.assertEqual(layout.stretch(1), 2)
-        self.assertEqual(holder_a.direction(), QBoxLayout.LeftToRight)
-        self.assertEqual(holder_b.direction(), QBoxLayout.LeftToRight)
+        self.assertEqual(result_card.sizePolicy().horizontalPolicy(), QSizePolicy.Expanding)
+        self.assertEqual(image_card.sizePolicy().verticalPolicy(), QSizePolicy.Expanding)
 
-        _main._apply_content_layout_orientation(layout, 900, 600, [holder_a, holder_b])
+        _main._apply_content_layout_orientation(
+            layout, 900, 600, card_widgets=[result_card, image_card])
         self.assertEqual(layout.direction(), QBoxLayout.LeftToRight)
         self.assertEqual(layout.stretch(0), 2)
         self.assertEqual(layout.stretch(1), 1)
-        self.assertEqual(holder_a.direction(), QBoxLayout.TopToBottom)
-        self.assertEqual(holder_b.direction(), QBoxLayout.TopToBottom)
+        self.assertEqual(result_card.sizePolicy().horizontalPolicy(), QSizePolicy.Expanding)
+        self.assertEqual(image_card.sizePolicy().horizontalPolicy(), QSizePolicy.Expanding)
         debug.trace(4, "test_content_layout_orientation_helper: passed")
+
+    def test_rotate_window_swaps_dimensions(self):
+        """Rotate helper should toggle between S23 Ultra portrait and landscape sizes."""
+        _ = QApplication.instance() or QApplication(sys.argv)
+        window = QWidget()
+        window.resize(_main.DESKTOP_PHONE_PORTRAIT_WIDTH, _main.DESKTOP_PHONE_PORTRAIT_HEIGHT)
+        _main._rotate_window(window)
+        self.assertEqual(window.width(), _main.DESKTOP_PHONE_PORTRAIT_HEIGHT)
+        self.assertEqual(window.height(), _main.DESKTOP_PHONE_PORTRAIT_WIDTH)
+        _main._rotate_window(window)
+        self.assertEqual(window.width(), _main.DESKTOP_PHONE_PORTRAIT_WIDTH)
+        self.assertEqual(window.height(), _main.DESKTOP_PHONE_PORTRAIT_HEIGHT)
 
     @pytest.mark.xfail(reason="needs build_ui() refactor to expose widget dict")
     def test_image_card_width_approx_one_third(self):
@@ -267,25 +298,37 @@ class TestWidgetDefaults(unittest.TestCase):
         self.assertEqual(pixmap.width(), 28)
         self.assertEqual(pixmap.height(), 28)
 
-    def test_center_combo_text_helper(self):
-        """Centered combo helper should make the display read-only and centered."""
+    def test_rotate_icon_renders(self):
+        """Rotate-view icon helper should produce a non-null pixmap."""
+        icon = _main._make_rotate_icon(28)
+        pixmap = icon.pixmap(28, 28)
+        self.assertTrue(not pixmap.isNull(), "Rotate icon pixmap should not be null")
+        self.assertEqual(pixmap.width(), 28)
+        self.assertEqual(pixmap.height(), 28)
+
+    def test_compact_control_width_helper(self):
+        """Compact-width helper should grow with text but respect limits."""
         _ = QApplication.instance() or QApplication(sys.argv)
-        combo = QComboBox()
+        combo = _main._CenteredComboBox()
+        short_width = _main._set_compact_control_width(combo, "Age", chrome_width=30, min_width=66, max_width=180)
+        long_width = _main._set_compact_control_width(
+            combo, "Chinese (Simplified)", chrome_width=30, min_width=66, max_width=180)
+        capped_width = _main._set_compact_control_width(
+            combo, "A very long field value that should be capped", chrome_width=30, min_width=66, max_width=120)
+        self.assertGreater(long_width, short_width)
+        self.assertEqual(capped_width, 120)
+        self.assertEqual(combo.width(), capped_width)
+
+    def test_center_combo_text_helper(self):
+        """Centered combo helper should keep the combo non-editable and align items."""
+        _ = QApplication.instance() or QApplication(sys.argv)
+        combo = _main._CenteredComboBox()
         combo.addItems(["English", "Spanish"])
         combo.setCurrentIndex(0)
-        line_edit = _main._center_combo_text(combo)
-        self.assertTrue(combo.isEditable(), "Helper should make combo editable for centered display")
-        self.assertTrue(line_edit.isReadOnly(), "Centered combo line edit should be read-only")
-        self.assertEqual(line_edit.alignment(), Qt.AlignCenter)
-        self.assertEqual(line_edit.height(), 28)
-        self.assertEqual(line_edit.focusPolicy(), Qt.NoFocus)
-        self.assertTrue(
-            line_edit.testAttribute(Qt.WA_TransparentForMouseEvents),
-            "Centered combo line edit should not intercept mouse clicks")
-        self.assertEqual(line_edit.textMargins().left(), 0)
-        self.assertEqual(line_edit.textMargins().top(), 0)
-        self.assertEqual(line_edit.textMargins().right(), 0)
-        self.assertEqual(line_edit.textMargins().bottom(), 0)
+        centered_combo = _main._center_combo_text(combo)
+        self.assertFalse(centered_combo.isEditable(), "Helper should keep combo non-editable")
+        self.assertEqual(centered_combo.itemData(0, Qt.TextAlignmentRole), Qt.AlignCenter)
+        self.assertEqual(centered_combo.itemData(1, Qt.TextAlignmentRole), Qt.AlignCenter)
 
     def test_configure_embedded_line_edit_helper(self):
         """Embedded editor helper should remove margins and vertically center text."""
