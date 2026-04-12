@@ -77,6 +77,7 @@ except ImportError:  # pragma: no cover
     _PIL_AVAILABLE = False
 
 from mezcla import debug
+from mezcla import glue_helpers as gh
 from mezcla import system
 import unittest
 
@@ -87,9 +88,10 @@ import unittest
 PACKAGE = "org.test.random_tidbit"      # package.domain + package.name from buildozer.spec
 MAIN_ACTIVITY = f"{PACKAGE}/org.kivy.android.PythonActivity"   # p4a/Qt activity class
 ADB = "adb"
-FETCH_WAIT_SECS = 150      # generous timeout: FLUX-schnell image gen can take 60-120 s
-LOGCAT_TAG = "python"      # tag used by the PySide6/Python runtime on Android
+FETCH_WAIT_SECS = 150         # generous timeout: FLUX-schnell image gen can take 60-120 s
+LOGCAT_TAG = "python"         # tag used by the PySide6/Python runtime on Android
 MIN_ANDROID_DEBUG_LEVEL = 5   # required for the image-generation trace markers
+TMP = gh.TMP
 
 
 # ---------------------------------------------------------------------------
@@ -99,14 +101,15 @@ MIN_ANDROID_DEBUG_LEVEL = 5   # required for the image-generation trace markers
 def _run_adb(*args, check=False, capture=True) -> subprocess.CompletedProcess:
     """Run an adb command and return the CompletedProcess result."""
     cmd = [ADB] + list(args)
-    debug.trace(4, f"_run_adb: {cmd}")
+    cmd_spec = " ".join(cmd)
+    debug.trace_expr(4, args, check, capture, prefix="in _run_adb:")
     result = subprocess.run(
         cmd,
         capture_output=capture,
         text=True,
         check=check,
     )
-    debug.trace(5, f"_run_adb() => {result!r}")
+    debug.trace(5, f"_run_adb({cmd_spec!r}) => {result!r}")
     return result
 
 
@@ -130,11 +133,15 @@ def _read_logcat(tag: str = LOGCAT_TAG, extra_seconds: float = 0.0) -> str:
     """Dump current logcat buffer filtered to TAG.  Returns decoded text."""
     if extra_seconds:
         time.sleep(extra_seconds)
+    # note: adb logcat options
+    # -d       Dump the log and then exit
+    # -s       Set default filter to silent
+    # <tag>:V  Filter for tag
     result = _run_adb("logcat", "-d", "-s", f"{tag}:V")
     return result.stdout
 
 
-def _take_screenshot(local_path: str = "/tmp/rt_screenshot.png") -> str:
+def _take_screenshot(local_path: str = f"{TMP}/rt_screenshot.png") -> str:
     """Capture device screenshot and pull it to LOCAL_PATH.  Returns local path."""
     _run_adb("shell", "screencap", "-p", "/sdcard/rt_test_screen.png")
     _run_adb("pull", "/sdcard/rt_test_screen.png", local_path)
@@ -165,6 +172,22 @@ def _poll_logcat_for(marker: str, timeout: float = FETCH_WAIT_SECS,
         time.sleep(poll_interval)
     debug.trace(3, f"_poll_logcat_for: timed out after {timeout}s waiting for {marker!r}")
     return False
+
+
+def _poll_logcat_for_any(markers, timeout: float = FETCH_WAIT_SECS,
+                         poll_interval: float = 2.0, tag: str = LOGCAT_TAG):
+    """Return the first marker found in logcat, or None if TIMEOUT expires."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        text = _read_logcat(tag=tag)
+        for marker in markers:
+            if marker in text:
+                debug.trace(4, f"_poll_logcat_for_any: found {marker!r}")
+                return marker
+        debug.trace(5, f"_poll_logcat_for_any: markers not yet found, sleeping {poll_interval}s")
+        time.sleep(poll_interval)
+    debug.trace(3, f"_poll_logcat_for_any: timed out after {timeout}s waiting for {markers!r}")
+    return None
 
 
 def _extract_debug_level_from_text(text: str):
@@ -355,12 +378,12 @@ class TestAppLaunch(unittest.TestCase):
         # Dump the UI hierarchy and look for crash dialog text
         dump = _run_adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
         debug.assertion(dump.returncode == 0)
-        pull = _run_adb("pull", "/sdcard/ui.xml", "/tmp/rt_ui.xml")
+        pull = _run_adb("pull", "/sdcard/ui.xml", f"{TMP}/rt_ui.xml")
         crash_phrases = ["Unfortunately", "has stopped", "keeps stopping"]
         if pull.returncode == 0:
             try:
-                ## OLD: with open("/tmp/rt_ui.xml") as f:
-                with system.open_file("/tmp/rt_ui.xml") as f:
+                ## OLD: with open(f"{TMP}/rt_ui.xml") as f:
+                with system.open_file(f"{TMP}/rt_ui.xml") as f:
                     xml = f.read()
                 for phrase in crash_phrases:
                     self.assertTrue(phrase not in xml,
@@ -416,8 +439,8 @@ class TestImageShownAfterFetch(unittest.TestCase):
           1. Clear logcat, then launch the app.
           2. Poll logcat for '_on_image: loadFromData ok=True' — this confirms Qt
              actually decoded and displayed the image (not just that generation ran).
-             Falls back to checking 'generate_image() =>' if the ok=True marker
-             never appears (e.g. old build without the trace).
+             Also accepts either 'generate_image() =>' or a cache-hit marker as the
+             startup path before waiting briefly for the ok=True marker.
           3. Take a screenshot via _take_screenshot().
           4. Load with PIL.Image.open(); get width × height from wm size.
           5. Crop the image-pane region: right 33 % of the content area
@@ -453,6 +476,7 @@ class TestImageShownAfterFetch(unittest.TestCase):
         # Primary marker: the new trace we added in main.py confirms Qt loaded the image
         IMAGE_LOAD_SUCCESS_MARKER = "_on_image: loadFromData ok=True"
         IMAGE_GEN_MARKER = "generate_image() =>"
+        CACHE_HIT_MARKER = "_FetchWorker: cache hit for "
 
         # Step 1: clear logcat, launch app
         _clear_logcat()
@@ -461,36 +485,41 @@ class TestImageShownAfterFetch(unittest.TestCase):
                          f"am start failed: {result.stderr}")
         debug.trace(4, "test_image_region_nonblank: app started, polling logcat")
 
-        # Step 2: poll logcat for image generation complete then display success
-        gen_found = _poll_logcat_for(IMAGE_GEN_MARKER, timeout=FETCH_WAIT_SECS)
-        if not gen_found:
+        # Step 2: poll logcat for either image display success, fresh generation, or cache hit.
+        start_marker = _poll_logcat_for_any(
+            [IMAGE_LOAD_SUCCESS_MARKER, IMAGE_GEN_MARKER, CACHE_HIT_MARKER],
+            timeout=FETCH_WAIT_SECS)
+        if not start_marker:
             logcat_tail = _read_logcat()[-2000:]
-            debug.trace(3, f"test_image_region_nonblank: gen timeout; logcat:\n{logcat_tail}")
-        self.assertTrue(gen_found,
-                        f"Timed out after {FETCH_WAIT_SECS}s waiting for "
-                        f"'{IMAGE_GEN_MARKER}' — image generation may have failed")
+            debug.trace(3, f"test_image_region_nonblank: start-marker timeout; logcat:\n{logcat_tail}")
+        self.assertTrue(
+            start_marker,
+            f"Timed out after {FETCH_WAIT_SECS}s waiting for one of "
+            f"{[IMAGE_LOAD_SUCCESS_MARKER, IMAGE_GEN_MARKER, CACHE_HIT_MARKER]!r}")
 
-        # Poll a bit more for the UI update (signal emitted on main thread)
-        display_found = _poll_logcat_for(IMAGE_LOAD_SUCCESS_MARKER,
-                                         timeout=5.0, poll_interval=1.0)
+        # Poll a bit more for the UI update (signal emitted on main thread) unless already seen.
+        display_found = (start_marker == IMAGE_LOAD_SUCCESS_MARKER)
+        if not display_found:
+            display_found = _poll_logcat_for(IMAGE_LOAD_SUCCESS_MARKER,
+                                             timeout=5.0, poll_interval=1.0)
         logcat_text = _read_logcat()
         load_ok_false = "_on_image: loadFromData ok=False" in logcat_text
-        debug.trace(3, f"test_image_region_nonblank: display_found={display_found} "
-                    f"load_ok_false={load_ok_false}")
+        debug.trace(3, f"test_image_region_nonblank: start_marker={start_marker!r} "
+                    f"display_found={display_found} load_ok_false={load_ok_false}")
         if load_ok_false:
             self.fail("_on_image: loadFromData returned False — Qt cannot decode the image. "
                       "Check that Pillow is in buildozer.spec requirements and poe_client.py "
                       "converts non-PNG images before returning.")
         self.assertTrue(display_found,
-                        f"'{IMAGE_LOAD_SUCCESS_MARKER}' not found in logcat — "
-                        "image was generated but Qt failed to display it. "
-                        "Check logcat for '_on_image: loadFromData ok=' to diagnose.")
+                        f"'{IMAGE_LOAD_SUCCESS_MARKER}' not found in logcat after "
+                        f"{start_marker!r} — image may have been cached/generated but Qt "
+                        "did not display it. Check logcat for '_on_image: loadFromData ok='.")
 
         # Extra pause for Qt to render to screen
         time.sleep(2)
 
         # Step 3: take screenshot
-        local_path = "/tmp/rt_image_test.png"
+        local_path = f"{TMP}/rt_image_test.png"
         _take_screenshot(local_path)
         self.assertTrue(pathlib.Path(local_path).exists(),
                         f"Screenshot not pulled to {local_path}")
@@ -515,8 +544,8 @@ class TestImageShownAfterFetch(unittest.TestCase):
                     f"size={crop.size}")
 
         # Always save both outputs for visual inspection regardless of pass/fail
-        crop_path = "/tmp/rt_image_crop.png"
-        annotated_path = "/tmp/rt_screenshot_annotated.png"
+        crop_path = f"{TMP}/rt_image_crop.png"
+        annotated_path = f"{TMP}/rt_screenshot_annotated.png"
         crop.save(crop_path)
         try:
             from PIL import ImageDraw  # pylint: disable=import-outside-toplevel

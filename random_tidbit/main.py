@@ -26,11 +26,11 @@ import os
 import sys
 
 # Installed packages
-from PySide6.QtCore import QDate, QEvent, QObject, Qt, QThread, QTimer, QRect
-from PySide6.QtGui import QFont, QIcon, QKeySequence, QPainter, QColor, QPixmap, QShortcut, QTextCharFormat
+from PySide6.QtCore import QDate, QEvent, QObject, QSize, Qt, QThread, QTimer, QRect
+from PySide6.QtGui import QFont, QIcon, QKeySequence, QPainter, QColor, QPen, QPixmap, QShortcut, QTextCharFormat
 from PySide6.QtWidgets import (
-    QApplication, QCalendarWidget, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
-    QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit,
+    QApplication, QBoxLayout, QCalendarWidget, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
+    QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QTextEdit,
     QVBoxLayout, QWidget)
 from PySide6.QtCore import Signal
 
@@ -45,6 +45,427 @@ from mezcla import debug, system
 # to avoid triggering mezcla's Main argument-parsing machinery at import time.
 
 DEFAULT_PROMPT = "Give some random bit of history for {date}--one entry"
+AGE_GROUPS = ["18+", "14-18", "9-14", "6-9", "3-5"]
+
+# Core palette
+COLOR_PARCHMENT_BG = "#ece1cf"          # parchment beige
+COLOR_INK_BROWN = "#2d2416"             # dark roast brown
+COLOR_INPUT_TAN = "#f6ebd8"             # light tan
+COLOR_BORDER_KHAKI = "#ccb690"          # sand khaki
+COLOR_SELECTION_SAGE = "#b9d0a8"        # soft sage green
+COLOR_FOCUS_BROWN = "#9a8559"           # caramel brown
+COLOR_INPUT_CREAM = "#fbf4e8"           # warm cream
+COLOR_BUTTON_STEEL = "#7088a3"          # dusty steel blue
+COLOR_BUTTON_TEXT = "#fffdf8"           # porcelain white
+COLOR_BUTTON_DISABLED = "#b9c8d6"       # pale slate blue
+COLOR_BUTTON_STEEL_HOVER = "#5f7995"    # stormy steel blue
+COLOR_FETCH_SAGE = "#78926a"            # muted sage
+COLOR_FETCH_TEXT = "#fffaf1"            # ivory cream
+COLOR_FETCH_SAGE_HOVER = "#667f58"      # shaded sage
+COLOR_QUIT_BG = "#f7ecdf"               # blush linen
+COLOR_QUIT_TEXT = "#7b433b"             # brick rose
+COLOR_QUIT_BORDER = "#b48075"           # dusty rose
+COLOR_QUIT_BG_HOVER = "#f1dfcf"         # peach linen
+COLOR_QUIT_TEXT_HOVER = "#652b24"       # mahogany brown
+COLOR_CAL_BUTTON_BG = "#f7efe2"         # oat cream
+COLOR_CAL_BUTTON_HOVER = "#fbf5eb"      # pale vanilla
+COLOR_TOGGLE_BLUE = "#537392"           # weathered denim
+COLOR_TOGGLE_BLUE_HOVER = "#355774"     # twilight blue
+COLOR_RESULT_CARD_BG = "#fffdf8"        # milk white
+COLOR_IMAGE_CARD_BG = "#fffef9"         # soft ivory
+COLOR_CAPTION_TAUPE = "#7d725b"         # warm taupe
+COLOR_DEBUG_BG = "#1a1b2e"              # midnight navy
+COLOR_DEBUG_TEXT = "#8a9bb0"            # misty blue-gray
+COLOR_CAL_ALT_BG = "#f5ead8"            # almond cream
+COLOR_CAL_TOOL_TEXT = "#3d4f66"         # slate blue-gray
+COLOR_CAL_MENU_BG = "#fff9ef"           # eggshell
+COLOR_CAL_SELECTION_BG = "#c8ddb5"      # pale moss
+COLOR_CAL_DAY_BG = "#fffaf1"            # butter cream
+COLOR_CAL_DAY_SELECTION = "#7c9870"     # moss green
+COLOR_WHITE = "#ffffff"                 # white
+
+# Age-group palette
+COLOR_KIDS_TEXT = "#55351a"             # dark saddle brown
+COLOR_KIDS_CAPTION = "#946c30"          # warm golden brown
+COLOR_KIDS_CARD_BG = "#fff6d8"          # pale butter yellow
+COLOR_KIDS_CARD_BORDER = "#d5b56c"      # honey gold
+COLOR_CHILD_TEXT = "#4a3218"            # chestnut brown
+COLOR_CHILD_CAPTION = "#866338"         # bronze brown
+COLOR_CHILD_CARD_BG = "#fff8e6"         # vanilla cream
+COLOR_CHILD_CARD_BORDER = "#d2bc86"     # antique gold
+COLOR_TWEEN_TEXT = "#3a2b18"            # dark walnut
+COLOR_TWEEN_CAPTION = "#6e6754"         # taupe gray
+COLOR_TWEEN_CARD_BG = "#fffbf1"         # linen white
+COLOR_TWEEN_CARD_BORDER = "#cab795"     # sandstone tan
+COLOR_TEEN_TEXT = "#30271b"             # deep espresso brown
+COLOR_TEEN_CAPTION = "#6a6254"          # muted olive taupe
+COLOR_TEEN_CARD_BG = "#fff8ea"          # warm ivory parchment
+COLOR_TEEN_CARD_BORDER = "#cfb68e"      # honey beige
+COLOR_ADULT_CARD_BG = "#fff9eb"         # parchment cream
+COLOR_ADULT_CAPTION = "#6b6151"         # earthy mushroom taupe
+COLOR_ADULT_CARD_BORDER = "#d0b88f"     # warm mushroom beige
+
+# Calendar icon palette
+COLOR_CAL_ICON_HEADER = "#c56c58"       # terracotta rose
+COLOR_CAL_ICON_OUTLINE = "#8e7654"      # bronze taupe
+COLOR_CAL_ICON_GRID = "#c8b79a"         # parchment grid tan
+COLOR_CAL_ICON_ACCENT = "#7d9a68"       # olive sage
+COLOR_CAL_ICON_RING = "#f4e0d8"         # pale blush
+COLOR_CAL_DIALOG_BG = "#fff8ed"         # light parchment
+COLOR_REFRESH_ICON = "#5f7995"          # stormy steel blue
+
+
+def _build_app_stylesheet() -> str:
+    """Return the shared application stylesheet."""
+    return f"""
+        QWidget {{
+            background-color: {COLOR_PARCHMENT_BG};
+            color: {COLOR_INK_BROWN};
+            font-family: "Trebuchet MS", "Verdana", sans-serif;
+            font-size: 13px;
+        }}
+        QLineEdit, QDateEdit, QComboBox, QTextEdit {{
+            background-color: {COLOR_INPUT_TAN};
+            border: 1px solid {COLOR_BORDER_KHAKI};
+            border-radius: 8px;
+            padding: 5px 8px;
+            selection-background-color: {COLOR_SELECTION_SAGE};
+        }}
+        QLineEdit:focus, QDateEdit:focus, QComboBox:focus, QTextEdit:focus {{
+            border: 1px solid {COLOR_FOCUS_BROWN};
+            background-color: {COLOR_INPUT_CREAM};
+        }}
+        QComboBox::drop-down {{ border: none; }}
+        QPushButton {{
+            background-color: {COLOR_BUTTON_STEEL};
+            color: {COLOR_BUTTON_TEXT};
+            border: none;
+            border-radius: 8px;
+            padding: 6px 18px;
+            font-weight: bold;
+            font-size: 13px;
+        }}
+        QPushButton:disabled {{
+            background-color: {COLOR_BUTTON_DISABLED};
+        }}
+        QPushButton:hover:!disabled {{
+            background-color: {COLOR_BUTTON_STEEL_HOVER};
+        }}
+        #fetch_button {{
+            background-color: {COLOR_FETCH_SAGE};
+            color: {COLOR_FETCH_TEXT};
+            padding: 6px 18px;
+        }}
+        #fetch_button:hover {{
+            background-color: {COLOR_FETCH_SAGE_HOVER};
+        }}
+        #quit_button {{
+            background-color: {COLOR_QUIT_BG};
+            color: {COLOR_QUIT_TEXT};
+            border: 1px solid {COLOR_QUIT_BORDER};
+            border-radius: 8px;
+            padding: 0px;
+            font-size: 15px;
+            font-weight: 700;
+        }}
+        #quit_button:hover {{
+            background-color: {COLOR_QUIT_BG_HOVER};
+            color: {COLOR_QUIT_TEXT_HOVER};
+        }}
+        #cal_button {{
+            background-color: {COLOR_CAL_BUTTON_BG};
+            border: 1px solid {COLOR_BORDER_KHAKI};
+            border-radius: 8px;
+            padding: 3px;
+        }}
+        #cal_button:hover {{
+            background-color: {COLOR_CAL_BUTTON_HOVER};
+        }}
+        #image_refresh_button {{
+            background-color: {COLOR_CAL_BUTTON_BG};
+            border: 1px solid {COLOR_BORDER_KHAKI};
+            border-radius: 8px;
+            padding: 3px;
+        }}
+        #image_refresh_button:hover {{
+            background-color: {COLOR_CAL_BUTTON_HOVER};
+        }}
+        #toggle_button {{
+            background-color: transparent;
+            color: {COLOR_TOGGLE_BLUE};
+            border: none;
+            text-align: left;
+            padding: 1px 2px;
+            font-size: 11px;
+            font-weight: normal;
+        }}
+        #toggle_button:hover {{
+            color: {COLOR_TOGGLE_BLUE_HOVER};
+        }}
+        QDateEdit::up-button, QDateEdit::down-button {{
+            width: 0px;
+            height: 0px;
+            border: none;
+        }}
+        #result_card {{
+            background-color: {COLOR_ADULT_CARD_BG};
+            border: 1px solid {COLOR_BORDER_KHAKI};
+            border-radius: 12px;
+        }}
+        #image_card {{
+            background-color: {COLOR_ADULT_CARD_BG};
+            border: 1px solid {COLOR_BORDER_KHAKI};
+            border-radius: 12px;
+        }}
+        #image_caption {{
+            color: {COLOR_CAPTION_TAUPE};
+            font-size: 10px;
+            font-style: italic;
+            padding: 4px 6px;
+        }}
+        #debug_pane {{
+            background-color: {COLOR_DEBUG_BG};
+            color: {COLOR_DEBUG_TEXT};
+            border: none;
+            border-radius: 0px;
+            padding: 4px;
+            font-family: monospace;
+            font-size: 9px;
+        }}
+        QCalendarWidget QWidget {{
+            alternate-background-color: {COLOR_CAL_ALT_BG};
+        }}
+        QCalendarWidget QToolButton {{
+            color: {COLOR_CAL_TOOL_TEXT};
+            background-color: {COLOR_CAL_BUTTON_BG};
+            border: 1px solid {COLOR_BORDER_KHAKI};
+            border-radius: 6px;
+            padding: 4px 8px;
+            min-width: 22px;
+        }}
+        QCalendarWidget QToolButton:hover {{
+            background-color: {COLOR_CAL_BUTTON_HOVER};
+        }}
+        QCalendarWidget QMenu {{
+            background-color: {COLOR_CAL_MENU_BG};
+            color: {COLOR_INK_BROWN};
+        }}
+        QCalendarWidget QSpinBox {{
+            background-color: {COLOR_CAL_MENU_BG};
+            color: {COLOR_INK_BROWN};
+            selection-background-color: {COLOR_CAL_SELECTION_BG};
+        }}
+        QCalendarWidget QAbstractItemView:enabled {{
+            background-color: {COLOR_CAL_DAY_BG};
+            color: {COLOR_INK_BROWN};
+            selection-background-color: {COLOR_CAL_DAY_SELECTION};
+            selection-color: {COLOR_WHITE};
+        }}
+    """
+
+
+def _age_group_ui_profile(age_group):
+    """Return display settings tailored to AGE_GROUP."""
+    profiles = {
+        "3-5": {
+            "font_family": "Comic Sans MS",
+            "result_point_size": 20,
+            "label_point_size": 15,
+            "caption_point_size": 12,
+            "text_color": COLOR_KIDS_TEXT,
+            "caption_color": COLOR_KIDS_CAPTION,
+            "card_bg": COLOR_KIDS_CARD_BG,
+            "card_border": COLOR_KIDS_CARD_BORDER,
+        },
+        "6-9": {
+            "font_family": "Trebuchet MS",
+            "result_point_size": 18,
+            "label_point_size": 14,
+            "caption_point_size": 11,
+            "text_color": COLOR_CHILD_TEXT,
+            "caption_color": COLOR_CHILD_CAPTION,
+            "card_bg": COLOR_CHILD_CARD_BG,
+            "card_border": COLOR_CHILD_CARD_BORDER,
+        },
+        "9-14": {
+            "font_family": "Verdana",
+            "result_point_size": 16,
+            "label_point_size": 13,
+            "caption_point_size": 11,
+            "text_color": COLOR_TWEEN_TEXT,
+            "caption_color": COLOR_TWEEN_CAPTION,
+            "card_bg": COLOR_TWEEN_CARD_BG,
+            "card_border": COLOR_TWEEN_CARD_BORDER,
+        },
+        "14-18": {
+            "font_family": "Avenir Next",
+            "result_point_size": 15,
+            "label_point_size": 12,
+            "caption_point_size": 10,
+            "text_color": COLOR_TEEN_TEXT,
+            "caption_color": COLOR_TEEN_CAPTION,
+            "card_bg": COLOR_TEEN_CARD_BG,
+            "card_border": COLOR_TEEN_CARD_BORDER,
+        },
+        "18+": {
+            "font_family": "Palatino Linotype",
+            "result_point_size": 14,
+            "label_point_size": 12,
+            "caption_point_size": 10,
+            "text_color": COLOR_INK_BROWN,
+            "caption_color": COLOR_ADULT_CAPTION,
+            "card_bg": COLOR_ADULT_CARD_BG,
+            "card_border": COLOR_ADULT_CARD_BORDER,
+        },
+    }
+    return profiles.get(age_group, profiles["18+"])
+
+
+def _make_calendar_icon(size: int = 40) -> QIcon:
+    """Draw a larger, more recognisable paper-calendar icon."""
+    pix = QPixmap(size, size)
+    pix.fill(Qt.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.Antialiasing)
+
+    outer_rect = QRect(2, 3, size - 4, size - 5)
+    body = QColor(COLOR_FETCH_TEXT)
+    header = QColor(COLOR_CAL_ICON_HEADER)
+    outline = QColor(COLOR_CAL_ICON_OUTLINE)
+    grid_line = QColor(COLOR_CAL_ICON_GRID)
+    accent = QColor(COLOR_CAL_ICON_ACCENT)
+
+    p.setPen(QPen(outline, 1.2))
+    p.setBrush(body)
+    p.drawRoundedRect(outer_rect, 4, 4)
+
+    header_h = max(9, size // 4)
+    p.setPen(Qt.NoPen)
+    p.setBrush(header)
+    p.drawRoundedRect(2, 3, size - 4, header_h, 4, 4)
+    p.drawRect(2, header_h // 2 + 3, size - 4, header_h // 2)
+
+    ring_y = 5
+    ring_w = max(4, size // 9)
+    ring_h = max(5, size // 7)
+    for x_offset in (size // 4, size - size // 4 - ring_w):
+        p.setBrush(QColor(COLOR_CAL_ICON_RING))
+        p.drawRoundedRect(x_offset, ring_y, ring_w, ring_h, 2, 2)
+
+    p.setPen(QPen(grid_line, 1))
+    grid_left = 6
+    grid_top = header_h + 7
+    grid_w = size - 12
+    grid_h = size - grid_top - 6
+    cols, rows = 7, 5
+    cell_w = grid_w / cols
+    cell_h = grid_h / rows
+    for row in range(rows):
+        for col in range(cols):
+            cx = int(grid_left + col * cell_w)
+            cy = int(grid_top + row * cell_h)
+            cw = max(2, int(cell_w) - 1)
+            ch = max(2, int(cell_h) - 1)
+            if row == 1 and col == 3:
+                p.fillRect(cx + 1, cy + 1, max(1, cw - 2), max(1, ch - 2), accent)
+            p.drawRect(cx, cy, cw, ch)
+
+    p.end()
+    return QIcon(pix)
+
+
+def _make_refresh_icon(size: int = 28) -> QIcon:
+    """Draw a circular refresh arrow used for image regeneration."""
+    pix = QPixmap(size, size)
+    pix.fill(Qt.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.Antialiasing)
+
+    pen = QPen(QColor(COLOR_REFRESH_ICON), 2.2)
+    pen.setCapStyle(Qt.RoundCap)
+    p.setPen(pen)
+    arc_rect = QRect(4, 4, size - 8, size - 8)
+    p.drawArc(arc_rect, 40 * 16, 280 * 16)
+
+    arrow_x = size - 7
+    arrow_y = size // 2 - 5
+    p.drawLine(arrow_x, arrow_y, arrow_x - 8, arrow_y + 1)
+    p.drawLine(arrow_x, arrow_y, arrow_x - 2, arrow_y + 8)
+
+    p.end()
+    return QIcon(pix)
+
+
+def _center_combo_text(combo):
+    """Center the current combo-box text without allowing free-form edits."""
+    combo.setEditable(True)
+    combo.setInsertPolicy(QComboBox.NoInsert)
+    line_edit = combo.lineEdit()
+    line_edit.setReadOnly(True)
+    line_edit.setAlignment(Qt.AlignCenter)
+    line_edit.setFrame(False)
+    line_edit.setCursor(Qt.ArrowCursor)
+    line_edit.setStyleSheet("QLineEdit { border: none; background: transparent; padding: 0px; }")
+    return line_edit
+
+
+def _apply_age_group_presentation(age_group, result_text, image_label, image_caption,
+                                  result_card, image_card):
+    """Apply fonts and warm accent colors for the selected AGE_GROUP."""
+    profile = _age_group_ui_profile(age_group)
+
+    result_font = QFont(profile["font_family"])
+    result_font.setPointSize(profile["result_point_size"])
+    result_font.setStyleStrategy(QFont.PreferAntialias)
+    result_text.setFont(result_font)
+    result_text.setStyleSheet(
+        "QTextEdit { "
+        f"border: none; background-color: transparent; color: {profile['text_color']}; "
+        f"selection-background-color: {COLOR_SELECTION_SAGE}; }}"
+    )
+
+    label_font = QFont(profile["font_family"])
+    label_font.setPointSize(profile["label_point_size"])
+    label_font.setBold(age_group in ("3-5", "6-9"))
+    image_label.setFont(label_font)
+    image_label.setStyleSheet(
+        "QLabel { border: none; background-color: transparent; "
+        f"color: {profile['caption_color']}; font-size: {profile['label_point_size']}pt; }}"
+    )
+
+    caption_font = QFont(profile["font_family"])
+    caption_font.setPointSize(profile["caption_point_size"])
+    image_caption.setFont(caption_font)
+    image_caption.setStyleSheet(
+        f"QLabel {{ color: {profile['caption_color']}; padding: 4px 6px; }}"
+    )
+
+    card_style = (
+        "QWidget { "
+        f"background-color: {profile['card_bg']}; "
+        f"border: 1px solid {profile['card_border']}; "
+        "border-radius: 12px; }"
+    )
+    result_card.setStyleSheet(card_style)
+    image_card.setStyleSheet(card_style)
+
+
+def _content_layout_direction(width: int, height: int):
+    """Return the layout direction for the tidbit content area."""
+    return QBoxLayout.TopToBottom if height > width else QBoxLayout.LeftToRight
+
+
+def _apply_content_layout_orientation(content_layout, width: int, height: int):
+    """Stack in portrait mode and place side-by-side in landscape mode."""
+    direction = _content_layout_direction(width, height)
+    content_layout.setDirection(direction)
+    if direction == QBoxLayout.TopToBottom:
+        content_layout.setStretch(0, 3)
+        content_layout.setStretch(1, 2)
+    else:
+        content_layout.setStretch(0, 2)
+        content_layout.setStretch(1, 1)
+    return direction
 
 ## Note: test by Gemini to resolve stack trace issue
 
@@ -72,6 +493,10 @@ POE_IMAGE_MODEL = system.getenv_text(
 SHOW_IMAGE = system.getenv_bool(
     "SHOW_IMAGE", True,
     desc="Whether to generate and show an image alongside the tidbit",
+    skip_register=True)
+DISABLE_CACHE_LOOKUP = system.getenv_bool(
+    "DISABLE_CACHE_LOOKUP", False,
+    desc="Whether to bypass tidbit/image cache lookups",
     skip_register=True)
 
 # Result cache: (date_str, age_group) -> {"tidbit", "image_bytes", "image_prompt"}
@@ -269,100 +694,7 @@ def main():
     window.setMinimumWidth(600)
 
     # Style
-    app.setStyleSheet("""
-        QWidget {
-            background-color: #ede0c8;
-            color: #2a1f0e;
-            font-family: sans-serif;
-            font-size: 13px;
-        }
-        QLineEdit, QDateEdit, QComboBox, QTextEdit {
-            background-color: #f8f4ec;
-            border: 1px solid #c8b898;
-            border-radius: 6px;
-            padding: 5px 8px;
-        }
-        QComboBox::drop-down { border: none; }
-        QPushButton {
-            background-color: #4a7fa8;
-            color: #ffffff;
-            border: none;
-            border-radius: 6px;
-            padding: 6px 18px;
-            font-weight: bold;
-            font-size: 13px;
-        }
-        QPushButton:disabled {
-            background-color: #b0c8dc;
-        }
-        QPushButton:hover:!disabled {
-            background-color: #3a6f98;
-        }
-        #fetch_button {
-            background-color: #6a9a5a;
-            padding: 5px 14px;
-        }
-        #fetch_button:hover {
-            background-color: #527a44;
-        }
-        #quit_button {
-            background-color: #a04040;
-            border-radius: 3px;
-            padding: 0px;
-            font-size: 12px;
-            font-weight: bold;
-        }
-        #quit_button:hover {
-            background-color: #7a2e2e;
-        }
-        #cal_button {
-            background-color: transparent;
-            border: none;
-            padding: 0px;
-        }
-        #toggle_button {
-            background-color: transparent;
-            color: #4a7fa8;
-            border: none;
-            text-align: left;
-            padding: 1px 2px;
-            font-size: 11px;
-            font-weight: normal;
-        }
-        #toggle_button:hover {
-            color: #2d5f80;
-        }
-        QDateEdit::up-button, QDateEdit::down-button {
-            width: 0px;
-            height: 0px;
-            border: none;
-        }
-        #result_card {
-            background-color: #ffffff;
-            border: 1px solid #c8b898;
-            border-radius: 8px;
-        }
-        #image_card {
-            background-color: #ffffff;
-            border: 1px solid #c8b898;
-            border-radius: 8px;
-        }
-        #image_caption {
-            color: #7a8898;
-            font-size: 10px;
-            font-style: italic;
-            padding: 4px 6px;
-        }
-        #debug_pane {
-            background-color: #1a1b2e;
-            color: #8a9bb0;
-            border: none;
-            border-radius: 0px;
-            padding: 4px;
-            font-family: monospace;
-            font-size: 9px;
-        }
-    """)
+    app.setStyleSheet(_build_app_stylesheet())
 
     # --- Input fields ---
     date_edit = QDateEdit()
@@ -372,60 +704,13 @@ def main():
     date_edit.setSelectedSection(QDateEdit.NoSection)
     # Hide the spin buttons (red circle in screenshot)
     date_edit.setButtonSymbols(QDateEdit.NoButtons)
-
-    def _make_calendar_icon(size: int = 32) -> QIcon:
-        """Draw a traditional monthly-grid calendar icon (7 cols × 5 rows day cells).
-
-        White body with a warm-blue header strip. No binding rings — the full
-        icon area is used for the grid so cells are as large and legible as possible.
-        """
-        pix = QPixmap(size, size)
-        pix.fill(Qt.transparent)
-        p = QPainter(pix)
-        p.setRenderHint(QPainter.Antialiasing)
-
-        body      = QColor("#FFFFFF")    # white calendar body
-        header    = QColor("#5a7fa0")    # muted blue header (blends with parchment)
-        grid_line = QColor("#a8b4c0")    # soft gray grid lines
-
-        # Outer rounded rectangle (calendar body)
-        p.setPen(Qt.NoPen)
-        p.setBrush(body)
-        p.drawRoundedRect(0, 0, size, size, 3, 3)
-
-        # Header bar — top ~20 % of the icon
-        header_h = max(5, size * 20 // 100)
-        p.setBrush(header)
-        p.drawRoundedRect(0, 0, size, header_h + 3, 3, 3)
-        # Flatten the rounded bottom of the header
-        p.drawRect(0, header_h // 2, size, header_h - header_h // 2 + 3)
-
-        # Day-cell grid: 7 columns (Sun–Sat) × 5 rows (weeks)
-        cols, rows = 7, 5
-        pad = 1
-        grid_x = pad
-        grid_y = header_h + pad
-        grid_w = size - 2 * pad
-        grid_h = size - grid_y - pad
-        cell_w = grid_w / cols
-        cell_h = grid_h / rows
-        p.setBrush(body)
-        p.setPen(grid_line)
-        for r in range(rows):
-            for c in range(cols):
-                cx = int(grid_x + c * cell_w)
-                cy = int(grid_y + r * cell_h)
-                cw = max(1, int(cell_w) - 1)
-                ch = max(1, int(cell_h) - 1)
-                p.drawRect(cx, cy, cw, ch)
-
-        p.end()
-        return QIcon(pix)
+    date_edit.lineEdit().setAlignment(Qt.AlignCenter)
 
     cal_button = QPushButton()
-    cal_button.setIcon(_make_calendar_icon(32))
-    cal_button.setIconSize(cal_button.sizeHint())
+    cal_button.setIcon(_make_calendar_icon(40))
+    cal_button.setIconSize(QSize(34, 34))
     cal_button.setObjectName("cal_button")
+    cal_button.setFixedSize(44, 40)
 
     def open_calendar_dialog():
         """Create calendar for selecting date of tidbit"""
@@ -433,15 +718,25 @@ def main():
         # and there is < and > controls for moving backward of forward.
         dlg = QDialog(window)
         dlg.setWindowTitle("Select Date")
+        dlg.resize(440, 360)
         cal = QCalendarWidget()
+        cal.setGridVisible(True)
+        cal.setMinimumSize(400, 290)
+        cal.setHorizontalHeaderFormat(QCalendarWidget.ShortDayNames)
         cal.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader)
+        cal.setStyleSheet(
+            f"QCalendarWidget QWidget {{ background-color: {COLOR_CAL_DIALOG_BG}; }}"
+            "QCalendarWidget QAbstractItemView:enabled {"
+            f" background-color: {COLOR_CAL_DAY_BG}; color: {COLOR_INK_BROWN};"
+            f" selection-background-color: {COLOR_CAL_DAY_SELECTION}; selection-color: {COLOR_WHITE}; }}"
+        )
         fmt = QTextCharFormat()
         fmt.setForeground(Qt.black)
         cal.setWeekdayTextFormat(Qt.Saturday, fmt)
         cal.setWeekdayTextFormat(Qt.Sunday, fmt)
         cal.setSelectedDate(date_edit.date())
         buttons = QDialogButtonBox()
-        buttons.addButton("OK", QDialogButtonBox.AcceptRole)
+        buttons.addButton("Choose date", QDialogButtonBox.AcceptRole)
         buttons.addButton("Cancel", QDialogButtonBox.RejectRole)
         buttons.accepted.connect(dlg.accept)
         buttons.rejected.connect(dlg.reject)
@@ -459,9 +754,16 @@ def main():
     fetch_button = QPushButton("Fetch")
     fetch_button.setObjectName("fetch_button")
 
-    quit_button = QPushButton("✕")
+    image_refresh_button = QPushButton()
+    image_refresh_button.setObjectName("image_refresh_button")
+    image_refresh_button.setToolTip("Regenerate image only")
+    image_refresh_button.setIcon(_make_refresh_icon(28))
+    image_refresh_button.setIconSize(QSize(22, 22))
+    image_refresh_button.setFixedSize(38, 34)
+
+    quit_button = QPushButton("X")
     quit_button.setObjectName("quit_button")
-    quit_button.setFixedSize(22, 22)
+    quit_button.setFixedSize(26, 26)
     quit_button.setToolTip("Quit")
 
     prompt_edit = QLineEdit(DEFAULT_PROMPT)
@@ -473,10 +775,10 @@ def main():
     exclude_edit.setPlaceholderText("e.g. wars, politics, religion")
 
     # Age group combobox: controls content and image filtering
-    AGE_GROUPS = ["18+", "14-18", "9-14", "6-9", "3-5"]
     age_combo = QComboBox()
     age_combo.addItems(AGE_GROUPS)
     age_combo.setCurrentIndex(0)      # default: 18+
+    _center_combo_text(age_combo)
 
     # Language combo: injected into the prompt so the LLM responds in that language
     LANGUAGES = [
@@ -487,8 +789,9 @@ def main():
     lang_combo = QComboBox()
     lang_combo.addItems(LANGUAGES)
     lang_combo.setCurrentIndex(0)     # default: English
+    _center_combo_text(lang_combo)
 
-    # --- Row 1: Date + Age + Language + quit (all always visible) ---
+    # --- Row 1: Date + Age + Language + image refresh + Fetch + quit ---
     date_row = QHBoxLayout()
     date_row.setSpacing(6)
     date_row.addWidget(QLabel("Date:"))
@@ -501,20 +804,18 @@ def main():
     date_row.addWidget(QLabel("Lang:"))
     date_row.addWidget(lang_combo)
     date_row.addSpacing(6)
+    date_row.addWidget(image_refresh_button)
+    date_row.addSpacing(4)
+    date_row.addWidget(fetch_button)
+    date_row.addSpacing(4)
     date_row.addWidget(quit_button)
 
-    # --- Row 2: Prompt + Fetch inline ---
-    prompt_row = QHBoxLayout()
-    prompt_row.setSpacing(6)
-    prompt_row.addWidget(QLabel("Prompt:"))
-    prompt_row.addWidget(prompt_edit, 1)
-    prompt_row.addWidget(fetch_button)
-
-    # --- Collapsible "Advanced settings" (prefer/exclude topics) ---
+    # --- Collapsible "Advanced settings" (prompt/prefer/exclude topics) ---
     adv_widget = QWidget()
     adv_form = QFormLayout(adv_widget)
     adv_form.setContentsMargins(16, 2, 0, 2)
     adv_form.setSpacing(4)
+    adv_form.addRow("Prompt:", prompt_edit)
     adv_form.addRow("Prefer topics:", prefer_edit)
     adv_form.addRow("Exclude topics:", exclude_edit)
     adv_widget.setVisible(False)
@@ -559,6 +860,7 @@ def main():
     image_label.setAlignment(Qt.AlignCenter)
     image_label.setMinimumWidth(180)
     image_label.setMinimumHeight(160)
+    image_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
     image_label.setWordWrap(True)
     image_label.setText("Image will appear\nafter fetch.")
     image_label.setStyleSheet(
@@ -570,14 +872,18 @@ def main():
     image_caption.setObjectName("image_caption")
     image_caption.setWordWrap(True)
     image_caption.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+    image_caption.setVisible(False)
 
     image_card = QWidget()
     image_card.setObjectName("image_card")
+    image_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
     image_card_layout = QVBoxLayout(image_card)
     image_card_layout.setContentsMargins(4, 4, 4, 4)
     image_card_layout.setSpacing(3)
-    image_card_layout.addWidget(image_label, 1)
+    image_card_layout.addWidget(image_label)
     image_card_layout.addWidget(image_caption)
+    _apply_age_group_presentation("18+", result_text, image_label, image_caption,
+                                  result_card, image_card)
 
     # Stored raw pixmap + resize-event filter so image rescales with the window
     _raw_pixmap = [None]
@@ -593,6 +899,12 @@ def main():
             return
         scaled = pix.scaled(w, h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         image_label.setPixmap(scaled)
+
+    def _set_image_caption(text):
+        """Show caption only when there is meaningful text to display."""
+        visible = bool(text and text.strip())
+        image_caption.setVisible(visible)
+        image_caption.setText(text if visible else "")
 
     class _ImageResizer(QObject):
         def eventFilter(self, watched, event):
@@ -618,6 +930,9 @@ def main():
     dbg_toggle.setObjectName("toggle_button")
     dbg_toggle.clicked.connect(
         lambda: _toggle_section(debug_pane, dbg_toggle, "Debug"))
+    age_combo.currentTextChanged.connect(
+        lambda value: _apply_age_group_presentation(
+            value, result_text, image_label, image_caption, result_card, image_card))
 
     def _set_debug_info(date_str, tidbit, image_prompt, age_group, extra=""):
         """Populate the debug pane with run details."""
@@ -655,7 +970,12 @@ def main():
         def run(self):
             """Fetch tidbit (and image) then emit signals back to the main thread."""
             cache_key = (self.date_str, self.age_group)
-            if not self.bypass_cache and cache_key in _fetch_cache:
+            if DISABLE_CACHE_LOOKUP:
+                debug.trace(3, "_FetchWorker: cache lookup disabled via DISABLE_CACHE_LOOKUP")
+            elif self.bypass_cache:
+                debug.trace(4, f"_FetchWorker: bypassing cache for {cache_key!r}")
+            elif cache_key in _fetch_cache:
+                debug.trace(3, f"_FetchWorker: cache hit for {cache_key!r}")
                 entry = _fetch_cache[cache_key]
                 self.tidbit_ready.emit(entry["tidbit"])
                 if entry["image_bytes"]:
@@ -663,6 +983,8 @@ def main():
                 self.fetch_done.emit(self.date_str, self.age_group,
                                      entry["image_prompt"], "(cached)")
                 return
+            else:
+                debug.trace(3, f"_FetchWorker: cache miss for {cache_key!r}")
 
             tidbit = get_random_tidbit(
                 self.date_str, self.prompt_text,
@@ -691,6 +1013,35 @@ def main():
             self.fetch_done.emit(self.date_str, self.age_group, image_prompt, note)
 
     _worker = [None]  # keeps reference so GC doesn't collect the running thread
+    _image_worker = [None]
+
+    class _ImageWorker(QThread):
+        """Background thread that regenerates only the image for an existing tidbit."""
+        image_ready = Signal(bytes, str)
+        image_done = Signal(str, str, str, str)   # date_str, age_group, image_prompt, note
+
+        def __init__(self, date_str, age_group, tidbit, parent=None):
+            super().__init__(parent)
+            self.date_str = date_str
+            self.age_group = age_group
+            self.tidbit = tidbit
+
+        def run(self):
+            """Regenerate the image while keeping the existing tidbit text."""
+            image_bytes_raw, image_prompt = get_tidbit_image(
+                self.tidbit, age_group=self.age_group)
+            image_bytes = image_bytes_raw or b""
+            note = "image refreshed" if image_bytes else "image unavailable"
+            if image_bytes:
+                self.image_ready.emit(image_bytes, image_prompt)
+            cache_key = (self.date_str, self.age_group)
+            entry = _fetch_cache.get(cache_key, {"tidbit": self.tidbit})
+            entry["tidbit"] = self.tidbit
+            entry["image_bytes"] = image_bytes
+            entry["image_prompt"] = image_prompt
+            _fetch_cache[cache_key] = entry
+            _save_cache()
+            self.image_done.emit(self.date_str, self.age_group, image_prompt, note)
 
     def _on_tidbit(tidbit):
         """Slot: update result pane when tidbit arrives."""
@@ -708,16 +1059,23 @@ def main():
             _rescale_image_label()
             image_label.setText("")
             # Show caption only if image came from Wikipedia (prompt prefix used as hint)
-            image_caption.setText("")
+            _set_image_caption("")
         else:
             image_label.setText("Image decode\nfailed.")
-            image_caption.setText(image_prompt[:120] if image_prompt else "")
+            _set_image_caption(image_prompt[:120] if image_prompt else "")
 
     def _on_fetch_done(date_str, age_group, image_prompt, note):
         """Slot: called when the worker finishes; updates debug pane."""
         tidbit = result_text.toPlainText()
         _set_debug_info(date_str, tidbit, image_prompt, age_group, extra=note)
         fetch_button.setEnabled(True)
+        image_refresh_button.setEnabled(True)
+
+    def _on_image_refresh_done(date_str, age_group, image_prompt, note):
+        """Slot: called when an image-only regeneration finishes."""
+        tidbit = result_text.toPlainText()
+        _set_debug_info(date_str, tidbit, image_prompt, age_group, extra=note)
+        image_refresh_button.setEnabled(True)
 
     def _on_image_unavailable():
         """Slot: show placeholder text when no image was returned."""
@@ -731,11 +1089,12 @@ def main():
                 if line.startswith("image_prompt:"):
                     cached_prompt = line[len("image_prompt:"):].strip()
                     break
-            image_caption.setText(cached_prompt[:160] if cached_prompt else "(image unavailable)")
+            _set_image_caption(cached_prompt[:160] if cached_prompt else "(image unavailable)")
 
     def on_fetch(bypass_cache=True):
         """Start a background worker to fetch tidbit and image for the current date."""
-        if _worker[0] and _worker[0].isRunning():
+        if ((_worker[0] and _worker[0].isRunning()) or
+                (_image_worker[0] and _image_worker[0].isRunning())):
             debug.trace(3, "on_fetch: previous fetch still in progress, skipping")
             return
         result_text.setPlainText("Fetching…")
@@ -745,6 +1104,7 @@ def main():
         _raw_pixmap[0] = None
         debug_pane.setPlainText("Fetching tidbit…")
         fetch_button.setEnabled(False)
+        image_refresh_button.setEnabled(False)
 
         date_str = date_edit.date().toString("MMMM dd")
         age_group = age_combo.currentText()
@@ -761,23 +1121,62 @@ def main():
         _worker[0] = worker
         worker.start()
 
+    def on_regenerate_image():
+        """Regenerate just the image for the currently displayed tidbit."""
+        if ((_worker[0] and _worker[0].isRunning()) or
+                (_image_worker[0] and _image_worker[0].isRunning())):
+            debug.trace(3, "on_regenerate_image: worker already running, skipping")
+            return
+        tidbit = result_text.toPlainText().strip()
+        if not tidbit or tidbit.startswith("Fetching"):
+            debug.trace(3, "on_regenerate_image: no stable tidbit available yet")
+            return
+        image_label.setText("Generating image…")
+        image_label.setPixmap(QPixmap())
+        _set_image_caption("")
+        _raw_pixmap[0] = None
+        image_refresh_button.setEnabled(False)
+        debug_pane.setPlainText("Regenerating image…")
+        date_str = date_edit.date().toString("MMMM dd")
+        age_group = age_combo.currentText()
+        worker = _ImageWorker(date_str, age_group, tidbit, parent=window)
+        worker.image_ready.connect(_on_image)
+        worker.image_done.connect(_on_image_refresh_done)
+        worker.image_done.connect(lambda *_: _on_image_unavailable())
+        _image_worker[0] = worker
+        worker.start()
+
     fetch_button.clicked.connect(lambda: on_fetch(bypass_cache=True))
+    image_refresh_button.clicked.connect(on_regenerate_image)
     quit_button.clicked.connect(app.quit)
 
     # F5 shortcut to trigger fetch (natural keyboard shortcut for "refresh")
     _f5 = QShortcut(QKeySequence("F5"), window)
     _f5.activated.connect(lambda: on_fetch(bypass_cache=True))
 
-    # Content row: text card (2/3) + image card (1/3)
-    content_row = QHBoxLayout()
+    # Content area: stacked in portrait mode, side-by-side in landscape.
+    content_row = QBoxLayout(QBoxLayout.LeftToRight)
     content_row.addWidget(result_card, 2)
     content_row.addWidget(image_card, 1)
+    content_row.setAlignment(image_card, Qt.AlignTop)
+
+    def _update_content_layout():
+        """Update content orientation from the current window aspect ratio."""
+        _apply_content_layout_orientation(content_row, window.width(), window.height())
+
+    class _WindowLayoutAdapter(QObject):
+        def eventFilter(self, watched, event):
+            if watched is window and event.type() == QEvent.Type.Resize:
+                _update_content_layout()
+            return False
+
+    _layout_adapter = _WindowLayoutAdapter(window)
+    window.installEventFilter(_layout_adapter)
 
     layout = QVBoxLayout()
     layout.setContentsMargins(8, 8, 8, 8)
     layout.setSpacing(6)
     layout.addLayout(date_row)
-    layout.addLayout(prompt_row)
     layout.addWidget(adv_toggle)
     layout.addWidget(adv_widget)
     layout.addWidget(separator)
@@ -785,6 +1184,7 @@ def main():
     layout.addWidget(dbg_toggle)
     layout.addWidget(debug_pane)
     window.setLayout(layout)
+    _update_content_layout()
 
     window.show()
 

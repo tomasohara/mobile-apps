@@ -66,8 +66,9 @@ import pytest
 # Must be set before any PySide6 import
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication, QComboBox
+from PySide6.QtWidgets import QApplication, QBoxLayout, QComboBox, QWidget
 
 from mezcla import debug
 
@@ -115,7 +116,7 @@ def _minimal_png_bytes(width: int = 4, height: int = 4, rgb: tuple = (255, 0, 0)
     )
 
 
-AGE_GROUPS = ["18+", "14-18", "9-14", "6-9", "3-5"]  # mirror of main.py
+AGE_GROUPS = _main.AGE_GROUPS
 
 
 # ===========================================================================
@@ -135,24 +136,32 @@ class TestLayoutProportions(unittest.TestCase):
     """Category 1: verify spatial layout properties"""
     
 
-    def test_content_row_stretch_in_source(self):
-        """Verify main.py encodes 2:1 stretch for content row (text vs image).
-        
-        Reads the source file and checks that addWidget calls for result_card
-        and image_card pass stretch factors 2 and 1 respectively.  Fragile but
-        works without the build_ui() refactor.
-        """
-        src = pathlib.Path(__file__).parent.parent / "main.py"
-        text = src.read_text()
-        # We expect lines like:  content_row.addWidget(result_card, 2)
-        #                         content_row.addWidget(image_card, 1)
-        self.assertTrue(
-            "result_card, 2" in text,
-            "result_card must be added with stretch=2")
-        self.assertTrue(
-            "image_card, 1" in text,
-            "image_card must be added with stretch=1")
-        debug.trace(4, "test_content_row_stretch_in_source: passed")
+    def test_content_layout_orientation_helper(self):
+        """Landscape should be horizontal; portrait should stack vertically."""
+        _ = QApplication.instance() or QApplication(sys.argv)
+        self.assertEqual(
+            _main._content_layout_direction(900, 600),
+            QBoxLayout.LeftToRight,
+            "Landscape windows should place text and image side-by-side")
+        self.assertEqual(
+            _main._content_layout_direction(600, 900),
+            QBoxLayout.TopToBottom,
+            "Portrait windows should stack text above image")
+
+        layout = QBoxLayout(QBoxLayout.LeftToRight)
+        layout.addWidget(QWidget(), 2)
+        layout.addWidget(QWidget(), 1)
+
+        _main._apply_content_layout_orientation(layout, 600, 900)
+        self.assertEqual(layout.direction(), QBoxLayout.TopToBottom)
+        self.assertEqual(layout.stretch(0), 3)
+        self.assertEqual(layout.stretch(1), 2)
+
+        _main._apply_content_layout_orientation(layout, 900, 600)
+        self.assertEqual(layout.direction(), QBoxLayout.LeftToRight)
+        self.assertEqual(layout.stretch(0), 2)
+        self.assertEqual(layout.stretch(1), 1)
+        debug.trace(4, "test_content_layout_orientation_helper: passed")
 
     @pytest.mark.xfail(reason="needs build_ui() refactor to expose widget dict")
     def test_image_card_width_approx_one_third(self):
@@ -221,6 +230,47 @@ class TestWidgetDefaults(unittest.TestCase):
             combo.itemText(combo.count() - 1) == "3-5",
             "Last age group should be '3-5' (youngest)")
         debug.trace(4, "test_age_combo_items_and_default: passed")
+
+    def test_age_group_profile_scales_for_younger_readers(self):
+        """Youngest age group should use the largest, most playful display profile."""
+        adult = _main._age_group_ui_profile("18+")
+        young = _main._age_group_ui_profile("3-5")
+        self.assertTrue(
+            young["result_point_size"] > adult["result_point_size"],
+            "Young kids should get a larger result font than adults")
+        self.assertTrue(
+            young["label_point_size"] > adult["label_point_size"],
+            "Young kids should get a larger image-label font than adults")
+        self.assertTrue(
+            "Comic" in young["font_family"],
+            "Young-kids profile should request a comic-style font family")
+
+    def test_calendar_icon_renders(self):
+        """Calendar icon helper should produce a non-null pixmap at the requested size."""
+        icon = _main._make_calendar_icon(40)
+        pixmap = icon.pixmap(40, 40)
+        self.assertTrue(not pixmap.isNull(), "Calendar icon pixmap should not be null")
+        self.assertEqual(pixmap.width(), 40)
+        self.assertEqual(pixmap.height(), 40)
+
+    def test_refresh_icon_renders(self):
+        """Image-regeneration icon helper should produce a non-null pixmap."""
+        icon = _main._make_refresh_icon(28)
+        pixmap = icon.pixmap(28, 28)
+        self.assertTrue(not pixmap.isNull(), "Refresh icon pixmap should not be null")
+        self.assertEqual(pixmap.width(), 28)
+        self.assertEqual(pixmap.height(), 28)
+
+    def test_center_combo_text_helper(self):
+        """Centered combo helper should make the display read-only and centered."""
+        _ = QApplication.instance() or QApplication(sys.argv)
+        combo = QComboBox()
+        combo.addItems(["English", "Spanish"])
+        combo.setCurrentIndex(0)
+        line_edit = _main._center_combo_text(combo)
+        self.assertTrue(combo.isEditable(), "Helper should make combo editable for centered display")
+        self.assertTrue(line_edit.isReadOnly(), "Centered combo line edit should be read-only")
+        self.assertEqual(line_edit.alignment(), Qt.AlignCenter)
 
     @pytest.mark.xfail(reason="needs build_ui() refactor to expose widget dict")
     def test_result_text_placeholder(self):
