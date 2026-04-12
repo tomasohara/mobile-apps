@@ -124,7 +124,15 @@ def _build_app_stylesheet() -> str:
             font-family: "Trebuchet MS", "Verdana", sans-serif;
             font-size: 13px;
         }}
-        QLineEdit, QDateEdit, QComboBox, QTextEdit {{
+        QLineEdit, QDateEdit, QComboBox {{
+            background-color: {COLOR_INPUT_TAN};
+            border: 1px solid {COLOR_BORDER_KHAKI};
+            border-radius: 8px;
+            min-height: 30px;
+            padding: 0px 8px;
+            selection-background-color: {COLOR_SELECTION_SAGE};
+        }}
+        QTextEdit {{
             background-color: {COLOR_INPUT_TAN};
             border: 1px solid {COLOR_BORDER_KHAKI};
             border-radius: 8px;
@@ -401,11 +409,27 @@ def _center_combo_text(combo):
     combo.setEditable(True)
     combo.setInsertPolicy(QComboBox.NoInsert)
     line_edit = combo.lineEdit()
+    _configure_embedded_line_edit(line_edit, passthrough_mouse=True)
     line_edit.setReadOnly(True)
+    return line_edit
+
+
+def _configure_embedded_line_edit(line_edit, passthrough_mouse=False):
+    """Normalize embedded line edits used by combo/date controls across platforms."""
     line_edit.setAlignment(Qt.AlignCenter)
     line_edit.setFrame(False)
     line_edit.setCursor(Qt.ArrowCursor)
-    line_edit.setStyleSheet("QLineEdit { border: none; background: transparent; padding: 0px; }")
+    line_edit.setContentsMargins(0, 0, 0, 0)
+    line_edit.setTextMargins(0, 0, 0, 0)
+    line_edit.setFixedHeight(28)
+    line_edit.setFocusPolicy(Qt.NoFocus)
+    if passthrough_mouse:
+        # On some Linux Qt styles, the embedded line edit can intercept clicks
+        # and make the parent combo feel disabled.
+        line_edit.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+    line_edit.setStyleSheet(
+        "QLineEdit { border: none; background: transparent; padding: 0px; margin: 0px; }"
+    )
     return line_edit
 
 
@@ -455,8 +479,13 @@ def _content_layout_direction(width: int, height: int):
     return QBoxLayout.TopToBottom if height > width else QBoxLayout.LeftToRight
 
 
-def _apply_content_layout_orientation(content_layout, width: int, height: int):
-    """Stack in portrait mode and place side-by-side in landscape mode."""
+def _content_holder_direction(content_direction):
+    """Return the holder direction that centers cards on the cross axis."""
+    return QBoxLayout.LeftToRight if content_direction == QBoxLayout.TopToBottom else QBoxLayout.TopToBottom
+
+
+def _apply_content_layout_orientation(content_layout, width: int, height: int, holder_layouts=None):
+    """Stack in portrait mode, place side-by-side in landscape, and center cards on the cross axis."""
     direction = _content_layout_direction(width, height)
     content_layout.setDirection(direction)
     if direction == QBoxLayout.TopToBottom:
@@ -465,6 +494,9 @@ def _apply_content_layout_orientation(content_layout, width: int, height: int):
     else:
         content_layout.setStretch(0, 2)
         content_layout.setStretch(1, 1)
+    holder_direction = _content_holder_direction(direction)
+    for holder_layout in holder_layouts or []:
+        holder_layout.setDirection(holder_direction)
     return direction
 
 ## Note: test by Gemini to resolve stack trace issue
@@ -704,7 +736,7 @@ def main():
     date_edit.setSelectedSection(QDateEdit.NoSection)
     # Hide the spin buttons (red circle in screenshot)
     date_edit.setButtonSymbols(QDateEdit.NoButtons)
-    date_edit.lineEdit().setAlignment(Qt.AlignCenter)
+    _configure_embedded_line_edit(date_edit.lineEdit())
 
     cal_button = QPushButton()
     cal_button.setIcon(_make_calendar_icon(40))
@@ -1155,14 +1187,36 @@ def main():
     _f5.activated.connect(lambda: on_fetch(bypass_cache=True))
 
     # Content area: stacked in portrait mode, side-by-side in landscape.
+    # Each card sits inside a holder layout with stretch on both sides so the
+    # cards stay centered on the cross axis as orientation changes.
+    result_holder = QWidget()
+    result_holder_layout = QBoxLayout(QBoxLayout.TopToBottom, result_holder)
+    result_holder_layout.setContentsMargins(0, 0, 0, 0)
+    result_holder_layout.setSpacing(0)
+    result_holder_layout.addStretch(1)
+    result_holder_layout.addWidget(result_card)
+    result_holder_layout.addStretch(1)
+
+    image_holder = QWidget()
+    image_holder_layout = QBoxLayout(QBoxLayout.TopToBottom, image_holder)
+    image_holder_layout.setContentsMargins(0, 0, 0, 0)
+    image_holder_layout.setSpacing(0)
+    image_holder_layout.addStretch(1)
+    image_holder_layout.addWidget(image_card)
+    image_holder_layout.addStretch(1)
+
     content_row = QBoxLayout(QBoxLayout.LeftToRight)
-    content_row.addWidget(result_card, 2)
-    content_row.addWidget(image_card, 1)
-    content_row.setAlignment(image_card, Qt.AlignTop)
+    content_row.addWidget(result_holder, 2)
+    content_row.addWidget(image_holder, 1)
 
     def _update_content_layout():
         """Update content orientation from the current window aspect ratio."""
-        _apply_content_layout_orientation(content_row, window.width(), window.height())
+        _apply_content_layout_orientation(
+            content_row,
+            window.width(),
+            window.height(),
+            [result_holder_layout, image_holder_layout],
+        )
 
     class _WindowLayoutAdapter(QObject):
         def eventFilter(self, watched, event):

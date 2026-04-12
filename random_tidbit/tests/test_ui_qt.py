@@ -151,16 +151,22 @@ class TestLayoutProportions(unittest.TestCase):
         layout = QBoxLayout(QBoxLayout.LeftToRight)
         layout.addWidget(QWidget(), 2)
         layout.addWidget(QWidget(), 1)
+        holder_a = QBoxLayout(QBoxLayout.TopToBottom)
+        holder_b = QBoxLayout(QBoxLayout.TopToBottom)
 
-        _main._apply_content_layout_orientation(layout, 600, 900)
+        _main._apply_content_layout_orientation(layout, 600, 900, [holder_a, holder_b])
         self.assertEqual(layout.direction(), QBoxLayout.TopToBottom)
         self.assertEqual(layout.stretch(0), 3)
         self.assertEqual(layout.stretch(1), 2)
+        self.assertEqual(holder_a.direction(), QBoxLayout.LeftToRight)
+        self.assertEqual(holder_b.direction(), QBoxLayout.LeftToRight)
 
-        _main._apply_content_layout_orientation(layout, 900, 600)
+        _main._apply_content_layout_orientation(layout, 900, 600, [holder_a, holder_b])
         self.assertEqual(layout.direction(), QBoxLayout.LeftToRight)
         self.assertEqual(layout.stretch(0), 2)
         self.assertEqual(layout.stretch(1), 1)
+        self.assertEqual(holder_a.direction(), QBoxLayout.TopToBottom)
+        self.assertEqual(holder_b.direction(), QBoxLayout.TopToBottom)
         debug.trace(4, "test_content_layout_orientation_helper: passed")
 
     @pytest.mark.xfail(reason="needs build_ui() refactor to expose widget dict")
@@ -271,6 +277,38 @@ class TestWidgetDefaults(unittest.TestCase):
         self.assertTrue(combo.isEditable(), "Helper should make combo editable for centered display")
         self.assertTrue(line_edit.isReadOnly(), "Centered combo line edit should be read-only")
         self.assertEqual(line_edit.alignment(), Qt.AlignCenter)
+        self.assertEqual(line_edit.height(), 28)
+        self.assertEqual(line_edit.focusPolicy(), Qt.NoFocus)
+        self.assertTrue(
+            line_edit.testAttribute(Qt.WA_TransparentForMouseEvents),
+            "Centered combo line edit should not intercept mouse clicks")
+        self.assertEqual(line_edit.textMargins().left(), 0)
+        self.assertEqual(line_edit.textMargins().top(), 0)
+        self.assertEqual(line_edit.textMargins().right(), 0)
+        self.assertEqual(line_edit.textMargins().bottom(), 0)
+
+    def test_configure_embedded_line_edit_helper(self):
+        """Embedded editor helper should remove margins and vertically center text."""
+        _ = QApplication.instance() or QApplication(sys.argv)
+        combo = QComboBox()
+        combo.setEditable(True)
+        line_edit = combo.lineEdit()
+        _main._configure_embedded_line_edit(line_edit)
+        self.assertEqual(line_edit.alignment(), Qt.AlignCenter)
+        self.assertEqual(line_edit.height(), 28)
+        self.assertEqual(line_edit.focusPolicy(), Qt.NoFocus)
+        self.assertFalse(line_edit.testAttribute(Qt.WA_TransparentForMouseEvents))
+        self.assertEqual(line_edit.textMargins().left(), 0)
+        self.assertEqual(line_edit.textMargins().top(), 0)
+        self.assertEqual(line_edit.textMargins().right(), 0)
+        self.assertEqual(line_edit.textMargins().bottom(), 0)
+
+    def test_single_line_fields_use_centered_vertical_padding(self):
+        """Single-line fields should use fixed height and no vertical padding."""
+        stylesheet = _main._build_app_stylesheet()
+        self.assertIn("QLineEdit, QDateEdit, QComboBox {", stylesheet)
+        self.assertIn("min-height: 30px;", stylesheet)
+        self.assertIn("padding: 0px 8px;", stylesheet)
 
     @pytest.mark.xfail(reason="needs build_ui() refactor to expose widget dict")
     def test_result_text_placeholder(self):
