@@ -47,6 +47,54 @@ from mezcla import debug, system
 DEFAULT_PROMPT = "Give some random bit of history for {date}--one entry"
 AGE_GROUPS = ["18+", "14-18", "9-14", "6-9", "3-5"]
 
+# Platform detection helpers
+def _is_android():
+    """Return True if running on Android (python-for-android)."""
+    return ("ANDROID_ARGUMENT" in os.environ or
+            os.path.exists("/system/build.prop"))
+
+def _is_ios():
+    """Return True if running on iOS."""
+    return (sys.platform == "ios" or
+            os.environ.get("KIVY_BUILD") == "ios")
+
+def _default_api_key_file():
+    """Return the platform-appropriate default path for the API key file."""
+    if _is_android():
+        path = "/storage/emulated/0/Download/POE_API.txt"
+        platform_label = "android"
+    elif _is_ios():
+        path = os.path.expanduser("~/Documents/POE_API.txt")
+        platform_label = "ios"
+    else:
+        # Linux/desktop: follow XDG convention
+        config_dir = os.environ.get("XDG_CONFIG_HOME",
+                                    os.path.expanduser("~/.config"))
+        path = os.path.join(config_dir, "random_tidbit", "POE_API.txt")
+        platform_label = "linux"
+    debug.trace(4, f"_default_api_key_file: platform={platform_label!r} => {path!r}")
+    return path
+
+
+POE_API_FILE = system.getenv_text(
+    "POE_API_FILE", _default_api_key_file(),
+    desc="Path to user-editable file containing the POE API key",
+    skip_register=True)
+debug.trace(4, f"POE_API_FILE={POE_API_FILE!r}")
+
+
+def read_api_key_from_file(filepath=None):
+    """Read POE API key from an external file the user can edit.
+    Returns the stripped key string, or None if the file is missing or empty.
+    Note: pass errors='ignore' to system.read_file to suppress error output."""
+    if filepath is None:
+        filepath = POE_API_FILE
+    api_key = system.read_file(filepath, errors="ignore").strip()
+    debug.trace(4 if api_key else 5,
+                f"read_api_key_from_file({filepath!r}): {'key found' if api_key else 'not found'}")
+    return api_key or None
+
+
 # Core palette
 COLOR_PARCHMENT_BG = "#ece1cf"          # parchment beige
 COLOR_INK_BROWN = "#2d2416"             # dark roast brown
@@ -584,8 +632,7 @@ def _rotate_window(window):
 ## Note: test by Gemini to resolve stack trace issue
 
 POE_API = system.getenv_value(
-    ## TODO1: get from vault
-    "POE_API", "Gek9rnD3phMdVY5xM2JCTAKaMYHWR8B6oVt70-jGnc0",
+    "POE_API", read_api_key_from_file(),
     desc="Platform for Open Exploration (POE)",
     skip_register=True)
 POE_MODEL = system.getenv_text(
