@@ -41,6 +41,7 @@ os.environ.setdefault("DEBUG_LEVEL", "5")
 sys.stderr.write(f"{__debug__=} {os.environ.get('DEBUG_LEVEL')=}\n")
 
 from mezcla import debug, system
+from mezcla import glue_helpers as gh
 # Note: poe_client is imported lazily inside each function (not at module level)
 # to avoid triggering mezcla's Main argument-parsing machinery at import time.
 
@@ -60,17 +61,20 @@ def _is_ios():
 
 def _default_api_key_file():
     """Return the platform-appropriate default path for the API key file."""
+    poe_api_text = "POE_API.txt"
     if _is_android():
-        path = "/storage/emulated/0/Download/POE_API.txt"
+        path = os.path.join("/storage/emulated/0/Download", poe_api_text)
         platform_label = "android"
     elif _is_ios():
-        path = os.path.expanduser("~/Documents/POE_API.txt")
+        path = os.path.join(os.path.expanduser("~/Documents") + poe_api_text)
         platform_label = "ios"
     else:
-        # Linux/desktop: follow XDG convention
-        config_dir = os.environ.get("XDG_CONFIG_HOME",
-                                    os.path.expanduser("~/.config"))
-        path = os.path.join(config_dir, "random_tidbit", "POE_API.txt")
+        path = os.path.join(gh.dirname(__file__), poe_api_text)
+        ## OLD:
+        ## # Linux/desktop: follow XDG convention
+        ## config_dir = os.environ.get("XDG_CONFIG_HOME",
+        ##                             os.path.expanduser("~/.config"))
+        ## path = os.path.join(config_dir, "random_tidbit", poe_api)
         platform_label = "linux"
     debug.trace(4, f"_default_api_key_file: platform={platform_label!r} => {path!r}")
     return path
@@ -89,6 +93,9 @@ def read_api_key_from_file(filepath=None):
     Note: pass errors='ignore' to system.read_file to suppress error output."""
     if filepath is None:
         filepath = POE_API_FILE
+    if debug.debugging():
+        other_text_files = gh.get_matching_files(gh.form_path(gh.dirname(filepath), "*.txt"))
+        debug.trace(5, f"{other_text_files=}")
     api_key = system.read_file(filepath, errors="ignore").strip()
     debug.trace(4 if api_key else 5,
                 f"read_api_key_from_file({filepath!r}): {'key found' if api_key else 'not found'}")
@@ -487,7 +494,7 @@ def _make_rotate_icon(size: int = 28) -> QIcon:
 class _CenteredComboBox(QComboBox):
     """Non-editable combo box that paints its current text centered."""
 
-    def paintEvent(self, event):
+    def paintEvent(self, _event):
         painter = QStylePainter(self)
         option = QStyleOptionComboBox()
         self.initStyleOption(option)
@@ -605,7 +612,7 @@ def _content_holder_direction(content_direction):
 
 
 def _apply_content_layout_orientation(content_layout, width: int, height: int,
-                                      holder_layouts=None, card_widgets=None):
+                                      _holder_layouts=None, card_widgets=None):
     """Stack in portrait mode and let cards expand to fill the content area."""
     direction = _content_layout_direction(width, height)
     content_layout.setDirection(direction)
